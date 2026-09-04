@@ -62,6 +62,18 @@ class TestFromDict:
         assert restored.pair_monitors is False
         assert restored.apps[0].pattern == "^x$"
 
+    def test_pairing_off_still_pins_workspaces_in_conf(self):
+        """Turning linking off must not also unpin the workspaces: the pages
+        still exist, the screens just stop switching together."""
+        cfg = PagesConfig.from_dict({"monitors": ["A", "B"], "pair_monitors": False})
+        conf = cfg.to_conf()
+        assert "workspace = 11, monitor:B" in conf
+        assert "hyprpages page" not in conf
+
+    def test_pairing_on_binds_page_keys_in_conf(self):
+        cfg = PagesConfig.from_dict({"monitors": ["A", "B"], "pair_monitors": True})
+        assert "bind = SUPER, 1, exec, hyprpages page 1" in cfg.to_conf()
+
     def test_pairing_hook_can_be_switched_off(self):
         cfg = PagesConfig.from_dict({"monitors": ["A", "B"], "pair_monitors": False})
         assert "workspace.active" not in cfg.to_lua()

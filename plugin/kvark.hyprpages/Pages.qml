@@ -221,6 +221,16 @@ Item {
     root.menuOpen = true
   }
 
+  // Linked screens are a choice, not a law: some people want one page across
+  // the whole desk, others want each monitor switching on its own. Both are
+  // reasonable, so it is a toggle rather than a built-in assumption.
+  function togglePairing() {
+    root.config = Object.assign({}, root.config, {
+      pair_monitors: !root.config.pair_monitors
+    })
+    root.dirty = true
+  }
+
   function closeMenu() {
     root.menuOpen = false
     root.menuEntry = null
@@ -566,6 +576,36 @@ Item {
               Layout.maximumWidth: Style.space(360)
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.caption
+            }
+
+            // Linked or independent screens.
+            Rectangle {
+              visible: root.monitors.length > 1
+              Layout.preferredWidth: pairingLabel.implicitWidth + Style.spacing.md * 2
+              Layout.preferredHeight: Style.space(22)
+              radius: Style.cornerRadius / 2
+              color: pairingHover.hovered ? Qt.lighter(root.background, 1.3) : "transparent"
+              border.width: 1
+              border.color: root.config.pair_monitors
+                ? root.selectedText
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.25)
+
+              Behavior on color { ColorAnimation { duration: 90 } }
+              HoverHandler { id: pairingHover }
+
+              Text {
+                id: pairingLabel
+                anchors.centerIn: parent
+                text: root.config.pair_monitors ? "screens linked" : "screens independent"
+                color: root.config.pair_monitors ? root.selectedText : root.mutedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: root.togglePairing()
+              }
             }
 
             // One status, three states, never two at once.
