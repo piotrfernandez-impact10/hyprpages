@@ -122,6 +122,46 @@ class TestLuaGeneration:
         assert r'monitor = "DP-\"evil"' in cfg.to_lua()
 
 
+class TestKeepTogether:
+    def test_absent_until_an_app_asks_for_it(self, cfg):
+        cfg.apps = [App(pattern="^x$", page=1, monitor="HDMI-A-1")]
+        assert "together_patterns" not in cfg.to_lua()
+
+    def test_emits_a_handler_when_set(self, cfg):
+        cfg.apps = [App(pattern="^mpv$", page=1, monitor="HDMI-A-1", together=True)]
+        lua = cfg.to_lua()
+        assert "together_patterns" in lua
+        assert 'hl.on("window.open"' in lua
+
+    def test_regex_escapes_become_lua_escapes(self, cfg):
+        """Lua patterns escape with %, and a backslash there means something
+        else entirely - an unconverted pattern would silently never match."""
+        cfg.apps = [
+            App(
+                pattern=r"^org\.qbittorrent\.qBittorrent$",
+                page=1,
+                monitor="HDMI-A-1",
+                together=True,
+            )
+        ]
+        lua = cfg.to_lua()
+        assert '"^org%.qbittorrent%.qBittorrent$"' in lua
+        assert "org\\." not in lua.split("together_patterns")[1][:200]
+
+    def test_moving_a_window_rehomes_the_group(self, cfg):
+        """Otherwise the group snaps back to wherever the first window opened."""
+        cfg.apps = [App(pattern="^mpv$", page=1, monitor="HDMI-A-1", together=True)]
+        assert 'hl.on("window.move_to_workspace"' in cfg.to_lua()
+
+    def test_conf_says_it_cannot_do_this(self, cfg):
+        """Conf syntax has no events. Dropping the setting silently would be
+        worse than saying so."""
+        cfg.apps = [App(pattern="^mpv$", page=1, monitor="DP-3", together=True, label="mpv")]
+        conf = cfg.to_conf()
+        assert "keep windows together" in conf
+        assert "mpv" in conf
+
+
 class TestPatterns:
     @pytest.mark.parametrize(
         "cls,expected",

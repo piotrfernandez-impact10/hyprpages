@@ -22,6 +22,8 @@ Rectangle {
   property var entry: ({})
   // Resolved by the parent, which has Quickshell in scope for icon lookup.
   property string iconSource: ""
+  // Its windows are set to stay on one workspace together.
+  property bool grouped: false
 
   signal contextRequested(real globalX, real globalY)
   signal dragFinished()
@@ -127,6 +129,15 @@ Rectangle {
         font.family: card.fontFamily
         font.pixelSize: card.fontBody
         font.bold: true
+      }
+
+      Text {
+        visible: card.grouped
+        text: "grouped"
+        color: card.foreground
+        opacity: 0.5
+        font.family: card.fontFamily
+        font.pixelSize: card.fontSmall
       }
 
       Text {

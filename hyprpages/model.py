@@ -70,6 +70,7 @@ class App:
     monitor: str  # monitor name, or "" for "wherever it opens"
     float: bool = False
     size: str = ""  # e.g. "1280 720"; only meaningful when float
+    together: bool = False  # new windows of this app join the others
     label: str = ""  # display name in the UI
 
     def workspace(self, cfg: PagesConfig) -> int | None:
@@ -161,6 +162,15 @@ class PagesConfig:
                     out.append(f"windowrule = {rule}, class:{app.pattern}")
             out.append("")
 
+        if any(app.together for app in self.apps):
+            names = ", ".join(app.label or app.pattern for app in self.apps if app.together)
+            out.append(
+                "# NOTE: 'keep windows together' is set for: " + names + "\n"
+                "# It needs a window.open event handler, which conf syntax has no way to\n"
+                "# express. Switch to the Lua config for it, or pin those apps to a page."
+            )
+            out.append("")
+
         if self.pair_monitors and len(self.monitors) > 1:
             out.append(
                 "# Switch every screen to the same page at once. The Lua config can do\n"
@@ -209,6 +219,9 @@ class PagesConfig:
         if self.apps:
             out.append("")
 
+        if any(app.together for app in self.apps):
+            out.append(self._together_lua())
+
         if self.pair_monitors and len(self.monitors) > 1:
             out.append(self._pairing_lua())
 
@@ -230,6 +243,80 @@ class PagesConfig:
             f'hl.window_rule({{ match = {{ class = "{_lua_escape(app.pattern)}" }}, '
             f"{', '.join(rules)} }}){comment}"
         )
+
+    def _together_lua(self) -> str:
+        """Keep an application's windows on one workspace.
+
+        Hyprland has no "same workspace as the parent" rule, and a placement
+        rule cannot express it either: a rule pins an app to a fixed page,
+        whereas this follows wherever its windows happen to be. So the first
+        window of a class sets the home and later ones join it, with the home
+        updated when a window is moved so the group follows rather than snapping
+        back to where it first opened.
+
+        Matching is on the window class, which cannot tell a dialog from a
+        genuinely new window - hence per-app rather than global.
+        """
+        patterns = ",\n  ".join(
+            f'"{_lua_pattern(app.pattern)}"' for app in self.apps if app.together
+        )
+        return f"""-- Keep each of these applications' windows together.
+local together_patterns = {{
+  {patterns}
+}}
+local together_home = {{}}
+
+local function together_key(class)
+  if type(class) ~= "string" then
+    return nil
+  end
+  for _, pattern in ipairs(together_patterns) do
+    if class:match(pattern) then
+      return pattern
+    end
+  end
+  return nil
+end
+
+hl.on("window.open", function(win)
+  local ok, class, address, workspace = pcall(function()
+    return win.class, win.address, win.workspace
+  end)
+  if not ok or not address then
+    return
+  end
+  local key = together_key(class)
+  if not key then
+    return
+  end
+
+  local home = together_home[key]
+  if home then
+    hl.dispatch(hl.dsp.window.move({{
+      workspace = tostring(home),
+      follow = false,
+      window = "address:" .. tostring(address),
+    }}))
+  elseif workspace then
+    together_home[key] = workspace.id
+  end
+end)
+
+-- Moving a window re-homes the whole group, so it follows you rather than
+-- snapping back to wherever the first window happened to open.
+hl.on("window.move_to_workspace", function(win)
+  local ok, class, workspace = pcall(function()
+    return win.class, win.workspace
+  end)
+  if not ok or not workspace then
+    return
+  end
+  local key = together_key(class)
+  if key then
+    together_home[key] = workspace.id
+  end
+end)
+"""
 
     def _pairing_lua(self) -> str:
         """Keep every monitor on the same page, however the switch was made.
@@ -280,6 +367,16 @@ hl.on("workspace.active", function(ws)
   page_syncing = false
 end)
 """
+
+
+def _lua_pattern(pattern: str) -> str:
+    """Turn our regex into a Lua pattern.
+
+    Lua patterns escape with % rather than a backslash, and class_to_pattern
+    only ever emits backslash escapes, so swapping the escape character is
+    enough for anything this tool generates.
+    """
+    return re.sub(r"\\(.)", r"%\1", pattern)
 
 
 def _lua_escape(value: str) -> str:

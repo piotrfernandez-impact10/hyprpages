@@ -250,6 +250,34 @@ Item {
 
   // Float/tile is a property of the rule, not of the live window: the editor
   // describes what should happen next time, and Apply makes it so.
+  // Whether new windows of an app join the ones already open. Per-app, because
+  // it matches on class and so cannot tell a dialog from a genuinely new
+  // window: right for qBittorrent's preview, wrong for a second browser window.
+  function setTogether(windowClass, together) {
+    var pattern = root.patternFor(windowClass)
+    var apps = (root.config.apps || []).slice()
+    for (var i = 0; i < apps.length; i++) {
+      if (apps[i].pattern === pattern) {
+        apps[i] = Object.assign({}, apps[i], { together: together })
+        root.config = Object.assign({}, root.config, { apps: apps })
+        root.dirty = true
+        return
+      }
+    }
+    var entry = root.menuEntry
+    apps.push({
+      pattern: pattern,
+      page: (entry && entry.page) || root.currentPage,
+      monitor: (entry && entry.onMonitor) || "",
+      float: !!(entry && entry.floating),
+      size: "",
+      together: together,
+      label: windowClass
+    })
+    root.config = Object.assign({}, root.config, { apps: apps })
+    root.dirty = true
+  }
+
   function setFloating(windowClass, floating) {
     var entry = root.menuEntry
     var page = entry && entry.page ? entry.page : root.currentPage
@@ -877,6 +905,10 @@ Item {
                 height: tile.rect.height
 
                 entry: tile.modelData
+                grouped: {
+                  var rule = root.ruleFor(tile.modelData.class)
+                  return !!(rule && rule.together)
+                }
                 iconSource: tile.modelData.icon
                   ? Quickshell.iconPath(tile.modelData.icon, true) : ""
                 onContextRequested: function (gx, gy) { root.openMenu(tile.modelData, gx, gy) }
@@ -1286,6 +1318,9 @@ Item {
           model: [
             { label: contextMenu.entry.floating ? "Tile it" : "Let it float",
               action: "float" },
+            { label: (contextMenu.rule && contextMenu.rule.together)
+                ? "Let its windows scatter" : "Keep its windows together",
+              action: "together" },
             { label: "Forget this rule", action: "forget" }
           ]
 
@@ -1317,6 +1352,9 @@ Item {
               onClicked: {
                 if (actionRow.modelData.action === "float") {
                   root.setFloating(contextMenu.windowClass, !contextMenu.entry.floating)
+                } else if (actionRow.modelData.action === "together") {
+                  root.setTogether(contextMenu.windowClass,
+                                   !(contextMenu.rule && contextMenu.rule.together))
                 } else if (contextMenu.rule) {
                   root.forget(contextMenu.rule.pattern)
                 }
