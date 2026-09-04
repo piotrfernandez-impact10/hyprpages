@@ -20,6 +20,15 @@ Rectangle {
   property int fontSmall: 11
 
   property var entry: ({})
+  // Resolved by the parent, which has Quickshell in scope for icon lookup.
+  property string iconSource: ""
+
+  signal contextRequested(real globalX, real globalY)
+  signal dragFinished()
+
+  // True while the left button is dragging this tile. The canvas watches it to
+  // draw the snap preview.
+  readonly property bool dragging: dragArea.drag.active
   property color foreground: "white"
   property color surface: "black"
   property color outline: "gray"
@@ -37,17 +46,6 @@ Rectangle {
   border.color: outline
   opacity: dragArea.drag.active ? 0.7 : 1
 
-  Drag.active: dragArea.drag.active
-  Drag.hotSpot.x: width / 2
-  Drag.hotSpot.y: height / 2
-  Drag.mimeData: {
-    "text/plain": JSON.stringify({
-      cls: entry.class,
-      floating: entry.floating,
-      size: (entry.size && entry.size.length === 2) ? (entry.size[0] + " " + entry.size[1]) : ""
-    })
-  }
-
   // Where the canvas says this window lives. Dragging breaks the x/y bindings,
   // so the card is put back here on release rather than left mid-air claiming
   // a position the window does not have.
@@ -57,10 +55,23 @@ Rectangle {
   MouseArea {
     id: dragArea
     anchors.fill: parent
-    drag.target: card
+    acceptedButtons: Qt.LeftButton | Qt.RightButton
+    // Only the left button drags: a right-press that moved the tile would
+    // fight the menu it is meant to open.
+    drag.target: pressedButtons & Qt.LeftButton ? card : null
     cursorShape: Qt.OpenHandCursor
+    onPressed: function (mouse) {
+      if (mouse.button === Qt.RightButton) {
+        var global = card.mapToItem(null, mouse.x, mouse.y)
+        card.contextRequested(global.x, global.y)
+        mouse.accepted = true
+      }
+    }
     onReleased: {
-      if (card.Drag.target) card.Drag.drop()
+      // The canvas decides where this landed by hit-testing the tile against
+      // the drawn screens; Qt's own drop machinery is not involved, so there
+      // is no mime data or DropArea to misconfigure.
+      card.dragFinished()
       card.x = card.homeX
       card.y = card.homeY
     }
@@ -76,7 +87,23 @@ Rectangle {
       Layout.fillWidth: true
       spacing: card.pad
 
+      // The application's own icon when one could be resolved, and a shape
+      // standing for the window's kind when it could not.
+      Image {
+        visible: card.iconSource !== ""
+        source: card.iconSource
+        sourceSize.width: card.fontBody + 2
+        sourceSize.height: card.fontBody + 2
+        // Layout.* rather than width/height: the RowLayout owns geometry here.
+        Layout.preferredWidth: card.fontBody + 2
+        Layout.preferredHeight: card.fontBody + 2
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        asynchronous: true
+      }
+
       Text {
+        visible: card.iconSource === ""
         text: card.kind === "terminal" ? "▸" : card.kind === "browser" ? "●" : "■"
         color: card.foreground
         opacity: 0.6

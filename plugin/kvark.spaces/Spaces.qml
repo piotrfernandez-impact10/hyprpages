@@ -154,11 +154,62 @@ Item {
     root.dirty = true
   }
 
+  // Context menu state. The menu edits the same working copy as drag and drop,
+  // so nothing reaches Hyprland until Apply.
+  property var menuEntry: null
+  property bool menuOpen: false
+  property real menuX: 0
+  property real menuY: 0
+
+  function openMenu(entry, x, y) {
+    root.menuEntry = entry
+    root.menuX = x
+    root.menuY = y
+    root.menuOpen = true
+  }
+
+  function closeMenu() {
+    root.menuOpen = false
+    root.menuEntry = null
+  }
+
+  function patternFor(windowClass) {
+    return "^" + windowClass.replace(/[.^$*+?()[\]{}|\\]/g, "\\$&") + "$"
+  }
+
+  function ruleFor(windowClass) {
+    var pattern = root.patternFor(windowClass)
+    var apps = root.config.apps || []
+    for (var i = 0; i < apps.length; i++)
+      if (apps[i].pattern === pattern) return apps[i]
+    return null
+  }
+
+  // Float/tile is a property of the rule, not of the live window: the editor
+  // describes what should happen next time, and Apply makes it so.
+  function setFloating(windowClass, floating) {
+    var entry = root.menuEntry
+    var page = entry && entry.page ? entry.page : root.currentPage
+    var monitor = entry && entry.onMonitor ? entry.onMonitor : ""
+    root.place(windowClass, page, monitor, floating,
+               entry && entry.size && entry.size.length === 2
+                 ? entry.size[0] + " " + entry.size[1] : "")
+  }
+
   function forget(pattern) {
     root.config = Object.assign({}, root.config, {
       apps: (root.config.apps || []).filter(function (a) { return a.pattern !== pattern })
     })
     root.dirty = true
+  }
+
+  // Move the live windows of a class, so a drag has a visible effect at once.
+  // The rule it also records is what makes the placement stick next time.
+  function moveLive(windowClass, page, monitor) {
+    if (!windowClass || !monitor) return
+    moveProcess.command = ["hypr-spaces", "move", windowClass,
+                           "--page", String(page), "--monitor", monitor]
+    moveProcess.running = true
   }
 
   function apply() {
@@ -186,6 +237,19 @@ Item {
           root.error = "could not read desktop state: " + e
         }
       }
+    }
+    stderr: StdioCollector {
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.error = message
+      }
+    }
+  }
+
+  Process {
+    id: moveProcess
+    stdout: StdioCollector {
+      onStreamFinished: root.refresh()   // redraw from reality, not assumption
     }
     stderr: StdioCollector {
       onStreamFinished: {
@@ -231,6 +295,17 @@ Item {
 
     Rectangle { anchors.fill: parent; color: root.scrim }
     MouseArea { anchors.fill: parent; onClicked: root.dismiss() }
+
+    // Right-click menu. A sibling of the card rather than a child of a tile,
+    // so it is not clipped by the small box that opened it.
+    MouseArea {
+      anchors.fill: parent
+      visible: root.menuOpen
+      enabled: root.menuOpen
+      acceptedButtons: Qt.LeftButton | Qt.RightButton
+      onClicked: root.closeMenu()
+      z: 100
+    }
 
     BorderSurface {
       id: card
@@ -368,6 +443,45 @@ Item {
             function px(worldX) { return canvas.offsetX + (worldX - canvas.bounds.x) * canvas.fit }
             function py(worldY) { return canvas.offsetY + (worldY - canvas.bounds.y) * canvas.fit }
 
+            // Snap preview. While a tile is dragged, this is the screen it
+            // would land on and the box it would occupy there; null when the
+            // pointer is over no screen, which is also how a drop is refused.
+            property var snap: null
+
+            function screenAt(canvasX, canvasY) {
+              for (var i = 0; i < root.monitors.length; i++) {
+                var m = root.monitors[i]
+                var left = canvas.px(m.x), top = canvas.py(m.y)
+                if (canvasX >= left && canvasX <= left + m.width * canvas.fit
+                    && canvasY >= top && canvasY <= top + m.height * canvas.fit)
+                  return m
+              }
+              return null
+            }
+
+            // Hit-test the tile's centre rather than the pointer: dragging by a
+            // corner should still target the screen the tile is mostly over.
+            function updateSnap(tile) {
+              var cx = tile.x + tile.width / 2
+              var cy = tile.y + tile.height / 2
+              var screen = canvas.screenAt(cx, cy)
+              if (!screen) {
+                canvas.snap = null
+                return
+              }
+              var left = canvas.px(screen.x), top = canvas.py(screen.y)
+              var w = screen.width * canvas.fit, h = screen.height * canvas.fit
+              // Clamped inside the target screen, so the preview always shows a
+              // box that could really exist there.
+              canvas.snap = {
+                monitor: screen.name,
+                x: Math.max(left, Math.min(tile.x, left + w - tile.width)),
+                y: Math.max(top, Math.min(tile.y, top + h - tile.height)),
+                width: tile.width,
+                height: tile.height
+              }
+            }
+
             Repeater {
               model: root.monitors
 
@@ -381,20 +495,10 @@ Item {
                 height: screen.modelData.height * canvas.fit
 
                 radius: Style.cornerRadius / 2
-                color: screenDrop.containsDrag ? root.selectedBackground : "transparent"
+                color: (canvas.snap && canvas.snap.monitor === screen.modelData.name)
+                       ? root.selectedBackground : "transparent"
                 border.width: 1
                 border.color: root.border
-
-                DropArea {
-                  id: screenDrop
-                  anchors.fill: parent
-                  onDropped: function (drop) {
-                    var payload = JSON.parse(drop.text)
-                    root.place(payload.cls, root.currentPage, screen.modelData.name,
-                               payload.floating, payload.size)
-                    drop.accept()
-                  }
-                }
 
                 // The bar's reserved strip, drawn so the miniature matches what
                 // the eye sees rather than the raw output rectangle.
@@ -443,6 +547,24 @@ Item {
                 height: tile.placeable ? tile.modelData.size[1] * canvas.fit : 0
 
                 entry: tile.modelData
+                iconSource: tile.modelData.icon
+                  ? Quickshell.iconPath(tile.modelData.icon, true) : ""
+                onContextRequested: function (gx, gy) { root.openMenu(tile.modelData, gx, gy) }
+
+                // Live preview while dragging, and the drop itself on release.
+                onXChanged: if (tile.dragging) canvas.updateSnap(tile)
+                onYChanged: if (tile.dragging) canvas.updateSnap(tile)
+                onDraggingChanged: if (tile.dragging) canvas.updateSnap(tile)
+                onDragFinished: {
+                  if (canvas.snap && canvas.snap.monitor !== tile.modelData.onMonitor) {
+                    root.place(tile.modelData.class, root.currentPage, canvas.snap.monitor,
+                               tile.modelData.floating,
+                               tile.modelData.size && tile.modelData.size.length === 2
+                                 ? tile.modelData.size[0] + " " + tile.modelData.size[1] : "")
+                    root.moveLive(tile.modelData.class, root.currentPage, canvas.snap.monitor)
+                  }
+                  canvas.snap = null
+                }
                 foreground: root.foreground
                 surface: root.background
                 outline: root.border
@@ -451,6 +573,30 @@ Item {
                 fontFamily: Style.font.menuFamily
                 fontBody: Style.font.body
                 fontSmall: Style.font.bodySmall
+              }
+            }
+
+            // Where the dragged tile will land. Drawn last so it sits above the
+            // tiles, and only while a drag is in flight.
+            Rectangle {
+              visible: canvas.snap !== null
+              x: canvas.snap ? canvas.snap.x : 0
+              y: canvas.snap ? canvas.snap.y : 0
+              width: canvas.snap ? canvas.snap.width : 0
+              height: canvas.snap ? canvas.snap.height : 0
+              radius: Style.cornerRadius / 2
+              color: root.selectedBackground
+              border.width: 2
+              border.color: root.selectedText
+              opacity: 0.9
+
+              Text {
+                anchors.centerIn: parent
+                visible: parent.height > 30
+                text: canvas.snap ? canvas.snap.monitor : ""
+                color: root.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.bodySmall
               }
             }
           }
@@ -463,6 +609,205 @@ Item {
             opacity: 0.45
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.bodySmall
+          }
+        }
+      }
+    }
+
+    BorderSurface {
+      id: contextMenu
+      visible: root.menuOpen
+      z: 101
+
+      readonly property var entry: root.menuEntry || ({})
+      readonly property string windowClass: contextMenu.entry.class || ""
+      readonly property var rule: root.ruleFor(contextMenu.windowClass)
+
+      // Kept on screen: a right-click near the bottom edge would otherwise
+      // open a menu that runs off it.
+      x: Math.max(0, Math.min(root.menuX, panel.width - width))
+      y: Math.max(0, Math.min(root.menuY, panel.height - height))
+      width: Style.space(230)
+      height: menuColumn.implicitHeight + Style.spacing.md * 2
+
+      color: root.background
+      radius: root.cornerRadius
+      borderSpec: root.borderSpec
+      padding: Style.spacing.md
+
+      MouseArea { anchors.fill: parent; onClicked: {} }
+
+      ColumnLayout {
+        id: menuColumn
+        anchors.fill: parent
+        anchors.margins: Style.spacing.md
+        spacing: Style.spacing.xs
+
+        Text {
+          Layout.fillWidth: true
+          text: contextMenu.windowClass
+          color: root.foreground
+          elide: Text.ElideRight
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.bodySmall
+          opacity: 0.6
+        }
+
+        Rectangle {
+          Layout.fillWidth: true
+          Layout.preferredHeight: 1
+          color: root.border
+          opacity: 0.3
+        }
+
+        Text {
+          text: "Send to page"
+          color: root.foreground
+          opacity: 0.6
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        // Pages as a grid of numbers rather than a submenu: one click, and the
+        // current page is visible at a glance.
+        GridLayout {
+          Layout.fillWidth: true
+          columns: 5
+          rowSpacing: Style.spacing.xs
+          columnSpacing: Style.spacing.xs
+
+          Repeater {
+            model: root.config.pages || 10
+
+            Rectangle {
+              id: pageCell
+              required property int index
+              readonly property int page: pageCell.index + 1
+              readonly property bool here: contextMenu.entry.page === pageCell.page
+
+              Layout.fillWidth: true
+              Layout.preferredHeight: Style.space(24)
+              radius: Style.cornerRadius / 2
+              color: pageCell.here ? root.selectedBackground : "transparent"
+              border.width: 1
+              border.color: root.border
+
+              Text {
+                anchors.centerIn: parent
+                text: pageCell.page === 10 ? "0" : String(pageCell.page)
+                color: pageCell.here ? root.selectedText : root.foreground
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                  var monitor = contextMenu.entry.onMonitor || ""
+                  root.place(contextMenu.windowClass, pageCell.page, monitor,
+                             contextMenu.entry.floating, "")
+                  root.moveLive(contextMenu.windowClass, pageCell.page, monitor)
+                  root.closeMenu()
+                }
+              }
+            }
+          }
+        }
+
+        Text {
+          visible: root.monitors.length > 1
+          text: "Send to screen"
+          color: root.foreground
+          opacity: 0.6
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        Repeater {
+          model: root.monitors.length > 1 ? root.monitors : []
+
+          Rectangle {
+            id: screenRow
+            required property var modelData
+            readonly property bool here: contextMenu.entry.onMonitor === screenRow.modelData.name
+
+            Layout.fillWidth: true
+            Layout.preferredHeight: Style.space(24)
+            radius: Style.cornerRadius / 2
+            color: screenRow.here ? root.selectedBackground : "transparent"
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              text: screenRow.modelData.name + "  " + screenRow.modelData.width
+                    + "x" + screenRow.modelData.height
+              color: screenRow.here ? root.selectedText : root.foreground
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              onClicked: {
+                var page = contextMenu.entry.page || root.currentPage
+                root.place(contextMenu.windowClass, page, screenRow.modelData.name,
+                           contextMenu.entry.floating, "")
+                root.moveLive(contextMenu.windowClass, page, screenRow.modelData.name)
+                root.closeMenu()
+              }
+            }
+          }
+        }
+
+        Rectangle {
+          Layout.fillWidth: true
+          Layout.preferredHeight: 1
+          color: root.border
+          opacity: 0.3
+        }
+
+        Repeater {
+          model: [
+            { label: contextMenu.entry.floating ? "Tile it" : "Let it float",
+              action: "float" },
+            { label: "Forget this rule", action: "forget" }
+          ]
+
+          Rectangle {
+            id: actionRow
+            required property var modelData
+
+            Layout.fillWidth: true
+            Layout.preferredHeight: Style.space(24)
+            radius: Style.cornerRadius / 2
+            color: actionHover.containsMouse ? root.selectedBackground : "transparent"
+            // Nothing to forget when no rule exists for this window yet.
+            opacity: (actionRow.modelData.action === "forget" && !contextMenu.rule) ? 0.35 : 1
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              text: actionRow.modelData.label
+              color: root.foreground
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            MouseArea {
+              id: actionHover
+              anchors.fill: parent
+              hoverEnabled: true
+              onClicked: {
+                if (actionRow.modelData.action === "float") {
+                  root.setFloating(contextMenu.windowClass, !contextMenu.entry.floating)
+                } else if (contextMenu.rule) {
+                  root.forget(contextMenu.rule.pattern)
+                }
+                root.closeMenu()
+              }
+            }
           }
         }
       }

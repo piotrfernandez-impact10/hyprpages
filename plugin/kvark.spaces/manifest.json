@@ -6,10 +6,18 @@
   "author": "Impact10",
   "description": "Visual editor for pages: see what is running and drag it where it belongs",
   "kinds": [
-    "overlay"
+    "overlay",
+    "bar-widget"
   ],
   "keepLoaded": false,
   "entryPoints": {
-    "overlay": "Spaces.qml"
+    "overlay": "Spaces.qml",
+    "barWidget": "SpacesBarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Spaces",
+    "description": "Show or hide the Spaces editor",
+    "category": "Compositor",
+    "allowMultiple": false
   }
 }
