@@ -26,6 +26,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import desktop
+
 # One process per window: the window PID is the terminal itself.
 PROC_TERMINALS = {"foot", "footclient", "alacritty", "ghostty", "wezterm-gui", "xterm"}
 # One process, many windows: must be asked over its own control socket.
@@ -207,6 +209,7 @@ def describe(window: dict, kitty_cache: dict[str, dict], tabs: list | None) -> d
 
     return {
         "class": cls,
+        "icon": desktop.icon_for(cls, comm),
         "kind": kind,
         "workspace": window.get("workspace", {}).get("name", ""),
         "floating": window.get("floating", False),

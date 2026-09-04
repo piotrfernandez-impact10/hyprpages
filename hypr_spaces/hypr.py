@@ -83,6 +83,20 @@ def clients() -> list[dict]:
     return sorted(seen.values(), key=lambda e: e["class"].lower())
 
 
+def move_to_workspace(address: str, workspace: int, follow: bool = False) -> None:
+    """Move one window to a workspace, without dragging focus along.
+
+    Hyprland 0.56 parses dispatch arguments as Lua, so the older
+    `dispatch movetoworkspacesilent 4,address:0x...` form is gone.
+    """
+    _hyprctl(
+        "dispatch",
+        "hl.dsp.window.move({{ workspace = '{}', follow = {}, window = 'address:{}' }})".format(
+            workspace, "true" if follow else "false", address
+        ),
+    )
+
+
 def reload() -> None:
     _hyprctl("reload")
 

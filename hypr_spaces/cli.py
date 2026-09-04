@@ -121,6 +121,36 @@ def cmd_capture(_args) -> int:
     return 0
 
 
+def cmd_move(args) -> int:
+    """Move the live windows of a class to a page, and record the rule.
+
+    Editing the rule alone changes nothing the user can see: a placement rule
+    only takes effect when a window next opens. Dragging a window in the editor
+    has to move the real window too, or the gesture appears to do nothing.
+    """
+    cfg = SpacesConfig.load()
+    if not cfg.monitors:
+        cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
+
+    workspace = cfg.workspace_for(args.page, args.monitor)
+    if workspace is None:
+        print(f"no workspace for page {args.page} on {args.monitor}", file=sys.stderr)
+        return 1
+
+    moved = 0
+    for client in hypr.query("clients") or []:
+        cls = client.get("initialClass") or client.get("class") or ""
+        if cls != args.window_class:
+            continue
+        if client.get("workspace", {}).get("name") == str(workspace):
+            continue  # already there
+        hypr.move_to_workspace(client["address"], workspace)
+        moved += 1
+
+    print(f"moved {moved} window(s) of {args.window_class} to workspace {workspace}")
+    return 0
+
+
 def cmd_apply(args) -> int:
     if args.stdin:
         # The editor hands back the whole configuration in one call rather
@@ -160,6 +190,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("capture", help="save the current layout as the configuration").set_defaults(
         func=cmd_capture
     )
+
+    move_parser = sub.add_parser("move", help="move a class's live windows to a page")
+    move_parser.add_argument("window_class", help="exact window class to move")
+    move_parser.add_argument("--page", type=int, required=True)
+    move_parser.add_argument("--monitor", required=True)
+    move_parser.set_defaults(func=cmd_move)
 
     apply_parser = sub.add_parser("apply", help="write spaces.lua and reload Hyprland")
     apply_parser.add_argument(
