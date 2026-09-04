@@ -390,7 +390,7 @@ Item {
       }
       // Name plates hang below each screen, so the canvas needs a little more
       // height than the screens themselves.
-      readonly property real plateRoom: Style.space(18)
+      readonly property real plateRoom: Style.space(24)
 
       width: Math.min(Style.space(1400), panel.width - Style.gapsOut * 4)
       height: Math.min(panel.height - Style.gapsOut * 4,
@@ -684,6 +684,7 @@ Item {
                 readonly property bool targeted:
                   canvas.snap && canvas.snap.monitor === screen.modelData.name
 
+                z: 0  // screens at the back
                 readonly property var rect: canvas.screenRect(screen.modelData)
                 x: screen.rect.x
                 y: screen.rect.y
@@ -727,51 +728,6 @@ Item {
                   }
                 }
 
-                // Add an application to this page, on this screen.
-                Rectangle {
-                  id: addButton
-                  anchors.right: parent.right
-                  anchors.bottom: parent.bottom
-                  anchors.margins: Style.spacing.xs
-                  width: Style.space(22)
-                  height: Style.space(22)
-                  radius: width / 2
-                  color: addHover.hovered ? root.selectedBackground
-                                          : Qt.rgba(0, 0, 0, 0.35)
-                  border.width: 1
-                  border.color: addHover.hovered ? root.selectedText : root.screenEdge
-
-                  Behavior on color { ColorAnimation { duration: 90 } }
-                  HoverHandler { id: addHover }
-
-                  Text {
-                    anchors.centerIn: parent
-                    text: "+"
-                    color: addHover.hovered ? root.selectedText : root.foreground
-                    font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.subtitle
-                    font.bold: true
-                  }
-
-                  MouseArea {
-                    anchors.fill: parent
-                    onClicked: root.addTo(root.currentPage, screen.modelData.name)
-                  }
-                }
-
-                // Name plate, outside the screen like a label on the bezel.
-                Text {
-                  anchors.horizontalCenter: parent.horizontalCenter
-                  anchors.top: parent.bottom
-                  anchors.topMargin: Style.spacing.xxs
-                  text: screen.modelData.name + "  ·  " + screen.modelData.width
-                        + "×" + screen.modelData.height
-                        + "  ·  ws " + root.workspaceFor(root.currentPage, screen.modelData.name)
-                  color: screen.targeted ? root.selectedText : root.mutedText
-                  font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: screen.targeted
-                }
               }
             }
 
@@ -782,6 +738,7 @@ Item {
               WindowCard {
                 id: tile
                 required property var modelData
+                z: 1  // windows sit inside their screen
 
                 readonly property var screenOf: root.monitorByName(tile.modelData.onMonitor)
                 readonly property bool placeable: !!tile.screenOf
@@ -830,9 +787,51 @@ Item {
               }
             }
 
+            // Add buttons, above the windows so a maximised one cannot bury
+            // them. Their own repeater rather than a child of each screen,
+            // because a screen sits below every window in draw order.
+            Repeater {
+              model: root.monitors
+
+              Rectangle {
+                id: addButton
+                required property var modelData
+                z: 10  // always reachable, whatever fills the screen
+                readonly property var rect: canvas.screenRect(addButton.modelData)
+
+                width: Style.space(24)
+                height: Style.space(24)
+                x: addButton.rect.x + addButton.rect.width - width - Style.spacing.sm
+                y: addButton.rect.y + addButton.rect.height - height - Style.spacing.sm
+                radius: width / 2
+
+                color: addHover.hovered ? root.selectedText : Qt.rgba(0, 0, 0, 0.55)
+                border.width: 1
+                border.color: addHover.hovered ? root.selectedText : root.screenEdge
+
+                Behavior on color { ColorAnimation { duration: 90 } }
+                HoverHandler { id: addHover }
+
+                Text {
+                  anchors.centerIn: parent
+                  text: "+"
+                  color: addHover.hovered ? root.background : root.screenEdge
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.subtitle
+                  font.bold: true
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  onClicked: root.addTo(root.currentPage, addButton.modelData.name)
+                }
+              }
+            }
+
             // Where the dragged tile will land. Drawn last so it sits above the
             // tiles, and only while a drag is in flight.
             Rectangle {
+              z: 20  // the drop preview is the most important thing on screen
               visible: canvas.snap !== null
               x: canvas.snap ? canvas.snap.x : 0
               y: canvas.snap ? canvas.snap.y : 0
