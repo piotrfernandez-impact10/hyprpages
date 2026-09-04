@@ -34,7 +34,7 @@ PROC_TERMINALS = {"foot", "footclient", "alacritty", "ghostty", "wezterm-gui", "
 SOCKET_TERMINALS = {"kitty"}
 BROWSERS = {"google-chrome", "chromium", "brave-browser", "microsoft-edge"}
 
-CDP_PORT = int(os.environ.get("HYPR_SPACES_CDP_PORT", "9333"))
+CDP_PORT = int(os.environ.get("HYPRPAGES_CDP_PORT", "9333"))
 
 # Shells are containers, not the interesting command. If a terminal's deepest
 # child is one of these, the terminal is considered idle at a directory.

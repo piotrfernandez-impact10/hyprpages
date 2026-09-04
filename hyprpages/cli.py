@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, capture, desktop, hypr
-from .model import App, SpacesConfig, class_to_pattern
+from .model import App, PagesConfig, class_to_pattern
 
 
 def infer_monitor_order(monitors: list[dict], offset: int) -> list[str]:
@@ -57,7 +57,7 @@ def infer_monitor_order(monitors: list[dict], offset: int) -> list[str]:
 def build_state() -> dict:
     """Everything the editor needs to draw the current desktop."""
     monitors = hypr.monitors()
-    cfg = SpacesConfig.load()
+    cfg = PagesConfig.load()
     if not cfg.monitors:
         cfg.monitors = infer_monitor_order(monitors, cfg.offset)
 
@@ -97,7 +97,7 @@ def cmd_state(_args) -> int:
 def cmd_capture(_args) -> int:
     """Turn the current desktop into config: every window becomes a rule."""
     state = build_state()
-    cfg = SpacesConfig.load()
+    cfg = PagesConfig.load()
     if not cfg.monitors:
         # The same inference build_state used. Falling back to physical
         # left-to-right order here instead would mirror the layout whenever the
@@ -134,7 +134,7 @@ def cmd_move(args) -> int:
     only takes effect when a window next opens. Dragging a window in the editor
     has to move the real window too, or the gesture appears to do nothing.
     """
-    cfg = SpacesConfig.load()
+    cfg = PagesConfig.load()
     if not cfg.monitors:
         cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
 
@@ -164,7 +164,7 @@ def cmd_focus(args) -> int:
     on the focused workspace, so this is how "add something here" is expressed
     without the launcher having to know anything about pages.
     """
-    cfg = SpacesConfig.load()
+    cfg = PagesConfig.load()
     if not cfg.monitors:
         cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
 
@@ -185,7 +185,7 @@ def cmd_page(args) -> int:
     command so the conf format can bind it to a key. Focus is restored to the
     screen it started on, so changing page does not move the cursor's screen.
     """
-    cfg = SpacesConfig.load()
+    cfg = PagesConfig.load()
     monitors = hypr.monitors()
     if not cfg.monitors:
         cfg.monitors = infer_monitor_order(monitors, cfg.offset)
@@ -217,7 +217,7 @@ def cmd_launch(args) -> int:
     Launched through uwsm-app so it joins the session scope like anything
     started from Omarchy's own launcher.
     """
-    cfg = SpacesConfig.load()
+    cfg = PagesConfig.load()
     if not cfg.monitors:
         cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
 
@@ -272,10 +272,10 @@ def cmd_apply(args) -> int:
         # The editor hands back the whole configuration in one call rather
         # than a flag per change, so an edit session is atomic: either the new
         # layout is saved and applied, or nothing is touched.
-        cfg = SpacesConfig.from_dict(json.load(sys.stdin))
+        cfg = PagesConfig.from_dict(json.load(sys.stdin))
         cfg.save()
     else:
-        cfg = SpacesConfig.load()
+        cfg = PagesConfig.load()
 
     if not cfg.monitors:
         # A first run has nothing saved yet; without this, apply would happily
@@ -313,11 +313,11 @@ def _warn_if_not_loaded(destination: Path, fmt: str) -> None:
 
     if fmt == "lua":
         entry = config_dir() / "hypr" / "hyprland.lua"
-        needle = instruction = 'require("hypr.spaces")'
+        needle = instruction = 'require("hypr.hyprpages")'
     else:
         entry = config_dir() / "hypr" / "hyprland.conf"
-        needle = "spaces.conf"
-        instruction = "source = ~/.config/hypr/spaces.conf"
+        needle = "hyprpages.conf"
+        instruction = "source = ~/.config/hypr/hyprpages.conf"
 
     try:
         if needle in entry.read_text():
@@ -333,11 +333,11 @@ def _warn_if_not_loaded(destination: Path, fmt: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="hypr-spaces",
+        prog="hyprpages",
         description="Visual editor for Hyprland spaces: see what is running, "
         "arrange it, and generate the config.",
     )
-    parser.add_argument("--version", action="version", version=f"hypr-spaces {__version__}")
+    parser.add_argument("--version", action="version", version=f"hyprpages {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("state", help="print the current desktop as JSON").set_defaults(func=cmd_state)
@@ -368,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     focus_parser.add_argument("--monitor", required=True)
     focus_parser.set_defaults(func=cmd_focus)
 
-    apply_parser = sub.add_parser("apply", help="write spaces.lua and reload Hyprland")
+    apply_parser = sub.add_parser("apply", help="write hyprpages.lua and reload Hyprland")
     apply_parser.add_argument(
         "--dry-run", action="store_true", help="print the Lua instead of writing it"
     )

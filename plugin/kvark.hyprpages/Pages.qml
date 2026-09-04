@@ -1,5 +1,5 @@
-// Visual editor for pages. Pure UI: every fact comes from `hypr-spaces state`
-// and every change leaves through `hypr-spaces apply --stdin`, so the process
+// Visual editor for pages. Pure UI: every fact comes from `hyprpages state`
+// and every change leaves through `hyprpages apply --stdin`, so the process
 // walking and config writing stay in Python where they can be tested.
 //
 // Surface tokens are borrowed from [menu], so a theme that styles the Omarchy
@@ -91,7 +91,7 @@ Item {
     root.opened = false
     root.stopWork()
     if (root.shell && typeof root.shell.hide === "function")
-      root.shell.hide((root.manifest && root.manifest.id) || "kvark.spaces")
+      root.shell.hide((root.manifest && root.manifest.id) || "kvark.hyprpages")
   }
 
   function toggle() {
@@ -291,7 +291,7 @@ Item {
     var list = root.filteredApps()
     if (!list.length) return
     var app = list[Math.max(0, Math.min(root.pickerIndex, list.length - 1))]
-    launchProcess.command = ["hypr-spaces", "launch", app.id,
+    launchProcess.command = ["hyprpages", "launch", app.id,
                              "--page", String(root.currentPage),
                              "--monitor", root.pickerMonitor]
     launchProcess.running = true
@@ -302,7 +302,7 @@ Item {
   // The rule it also records is what makes the placement stick next time.
   function moveLive(windowClass, page, monitor) {
     if (!root.opened || !windowClass || !monitor) return
-    moveProcess.command = ["hypr-spaces", "move", windowClass,
+    moveProcess.command = ["hyprpages", "move", windowClass,
                            "--page", String(page), "--monitor", monitor]
     moveProcess.running = true
   }
@@ -319,7 +319,7 @@ Item {
 
   Process {
     id: stateProcess
-    command: ["hypr-spaces", "state"]
+    command: ["hyprpages", "state"]
     stdout: StdioCollector {
       onStreamFinished: {
         root.busy = false
@@ -344,7 +344,7 @@ Item {
 
   Process {
     id: appsProcess
-    command: ["hypr-spaces", "apps"]
+    command: ["hyprpages", "apps"]
     stdout: StdioCollector {
       onStreamFinished: {
         try {
@@ -391,7 +391,7 @@ Item {
 
   Process {
     id: applyProcess
-    command: ["hypr-spaces", "apply", "--stdin"]
+    command: ["hyprpages", "apply", "--stdin"]
     stdinEnabled: true
     stdout: StdioCollector {
       onStreamFinished: {
@@ -418,7 +418,7 @@ Item {
     visible: root.opened
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    WlrLayershell.namespace: "kvark-spaces"
+    WlrLayershell.namespace: "kvark-hyprpages"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
@@ -542,7 +542,7 @@ Item {
             }
 
             Text {
-              text: "Spaces"
+              text: "Pages"
               color: root.foreground
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.heading

@@ -1,12 +1,12 @@
-# hypr-spaces
+# hyprpages
 
 See what is actually running on your Hyprland desktop, arrange it by dragging,
 and get the config written for you.
 
-Hyprland binds every workspace to exactly one monitor. That makes a "space"
-spanning two screens impossible to express directly — you end up hand-writing
-pairs of workspace rules and hoping the numbering stays straight.
-`hypr-spaces` treats a **page** as the unit you actually think in: one keypress
+Hyprland binds every workspace to exactly one monitor, so a desktop that spans
+two screens cannot be expressed directly — you end up hand-writing pairs of
+workspace rules and hoping the numbering stays straight.
+`hyprpages` treats a **page** as the unit you actually think in: one keypress
 worth of desktop, across every monitor you own.
 
 ```
@@ -17,10 +17,13 @@ page N  ->  workspace N            on the first monitor
 
 ## Status
 
-Early, and honest about it: the command line is tested and stable, the visual
-editor currently requires [Omarchy](https://omarchy.org)'s Quickshell-based
-shell. Making the editor run on any Hyprland is the next milestone — see
-[Roadmap](#roadmap).
+Early. The command line is tested and stable and works on any Hyprland.
+
+**The visual editor requires [Omarchy](https://omarchy.org)** — it ships as a
+plugin for Omarchy's Quickshell-based shell, and that is a deliberate choice
+rather than a gap: building it there means it inherits the theme, the bar and
+the keybinding conventions instead of reimplementing them. If you are on plain
+Hyprland the CLI still does everything except the dragging.
 
 ## What it does
 
@@ -46,34 +49,34 @@ control socket), a Chromium-family browser started with
 ## Install
 
 ```bash
-git clone https://github.com/<owner>/hypr-spaces
-cd hypr-spaces
+git clone https://github.com/<owner>/hyprpages
+cd hyprpages
 ./install.sh
 ```
 
-That symlinks `hypr-spaces` into `~/.local/bin`. There is deliberately no
+That symlinks `hyprpages` into `~/.local/bin`. There is deliberately no
 `pip install`: the tool has no dependencies, and `pip install --user` fails
 outright on distributions that mark Python as externally managed (PEP 668).
 
 ## Use
 
 ```bash
-hypr-spaces state            # what is running right now, as JSON
-hypr-spaces capture          # adopt the current layout as your configuration
-hypr-spaces apply --dry-run  # show the config that would be written
-hypr-spaces apply            # write it and reload Hyprland
-hypr-spaces page 3           # switch every screen to page 3
+hyprpages state            # what is running right now, as JSON
+hyprpages capture          # adopt the current layout as your configuration
+hyprpages apply --dry-run  # show the config that would be written
+hyprpages apply            # write it and reload Hyprland
+hyprpages page 3           # switch every screen to page 3
 ```
 
-`apply` writes **only** its own file — `~/.config/hypr/spaces.lua` or
-`spaces.conf`. Your own config is never edited. It picks the format from
+`apply` writes **only** its own file — `~/.config/hypr/hyprpages.lua` or
+`hyprpages.conf`. Your own config is never edited. It picks the format from
 whether you have a `hyprland.lua`, and tells you the one line to add:
 
 ```lua
-require("hypr.spaces")                    -- Lua config
+require("hypr.hyprpages")                    -- Lua config
 ```
 ```conf
-source = ~/.config/hypr/spaces.conf       # classic config
+source = ~/.config/hypr/hyprpages.conf       # classic config
 ```
 
 ### Lua vs conf
@@ -83,7 +86,7 @@ switch on every screen at once:
 
 | | Lua | conf |
 |---|---|---|
-| Page switching | a `workspace.active` hook, so **any** route works — keys, clicking a bar, `SUPER`+scroll | `SUPER`+number bound to `hypr-spaces page N` |
+| Page switching | a `workspace.active` hook, so **any** route works — keys, clicking a bar, `SUPER`+scroll | `SUPER`+number bound to `hyprpages page N` |
 
 ## How window introspection works
 
@@ -110,11 +113,11 @@ enough to place it.
 
 ## Roadmap
 
-1. **A standalone editor** so the visual half works on any Hyprland, not only
-   under Omarchy's shell
-2. **Packaging** — an AUR package, a man page, a desktop entry
-3. **Space templates** — rebuild a page from nothing, launching each terminal
+1. **Packaging** — an AUR package, a man page, a desktop entry
+2. **Page templates** — rebuild a page from nothing, launching each terminal
    with its directory and command, and the browser with its tabs
+3. **Per-page layouts** — remember how windows were split, not only where they
+   lived
 
 ## Development
 
@@ -122,7 +125,7 @@ enough to place it.
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
-.venv/bin/mypy hypr_spaces
+.venv/bin/mypy hyprpages
 ```
 
 The suite fakes `/proc`, `hyprctl` and the desktop-entry tree, so it runs
@@ -134,7 +137,7 @@ a broken overlay can leave an orphaned layer surface behind:
 
 ```bash
 mkdir -p /tmp/qmlimports && ln -sfn /usr/share/omarchy/shell /tmp/qmlimports/qs
-qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml plugin/kvark.spaces/*.qml
+qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml plugin/kvark.hyprpages/*.qml
 ```
 
 ## Licence

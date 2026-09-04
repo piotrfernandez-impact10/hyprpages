@@ -11,12 +11,12 @@ import json
 
 import pytest
 
-from hypr_spaces.model import App, SpacesConfig, class_to_pattern, state_path
+from hyprpages.model import App, PagesConfig, class_to_pattern, state_path
 
 
 @pytest.fixture
-def cfg() -> SpacesConfig:
-    return SpacesConfig(pages=10, offset=10, monitors=["HDMI-A-1", "DP-3"])
+def cfg() -> PagesConfig:
+    return PagesConfig(pages=10, offset=10, monitors=["HDMI-A-1", "DP-3"])
 
 
 class TestWorkspaceMapping:
@@ -29,7 +29,7 @@ class TestWorkspaceMapping:
         assert cfg.workspace_for(4, "DP-3") == 14
 
     def test_third_monitor_lands_in_the_next_band(self):
-        cfg = SpacesConfig(monitors=["A", "B", "C"])
+        cfg = PagesConfig(monitors=["A", "B", "C"])
         assert cfg.workspace_for(3, "C") == 23
 
     def test_unknown_monitor_has_no_workspace(self, cfg):
@@ -54,14 +54,14 @@ class TestWorkspaceMapping:
         Documented rather than prevented: the UI clamps offset >= pages, and
         this test pins the behaviour so a future change is a deliberate one.
         """
-        cfg = SpacesConfig(pages=10, offset=5, monitors=["A", "B"])
+        cfg = PagesConfig(pages=10, offset=5, monitors=["A", "B"])
         assert cfg.workspace_for(6, "A") == 6
         assert cfg.page_of(6) == (6, "A")
 
 
 class TestLuaGeneration:
     def test_no_monitors_produces_a_comment_not_broken_lua(self):
-        lua = SpacesConfig().to_lua()
+        lua = PagesConfig().to_lua()
         assert "No monitors configured" in lua
         assert "workspace_rule" not in lua
 
@@ -106,7 +106,7 @@ class TestLuaGeneration:
         assert "-- (no rules for ^ghost$)" in cfg.to_lua()
 
     def test_pairing_hook_is_omitted_for_a_single_monitor(self):
-        cfg = SpacesConfig(monitors=["HDMI-A-1"])
+        cfg = PagesConfig(monitors=["HDMI-A-1"])
         assert "workspace.active" not in cfg.to_lua()
 
     def test_pairing_hook_guards_against_recursion(self, cfg):
@@ -118,7 +118,7 @@ class TestLuaGeneration:
         assert "if page_syncing then" in lua
 
     def test_quotes_in_a_monitor_name_cannot_break_out_of_the_string(self):
-        cfg = SpacesConfig(monitors=['DP-"evil'])
+        cfg = PagesConfig(monitors=['DP-"evil'])
         assert r'monitor = "DP-\"evil"' in cfg.to_lua()
 
 
@@ -142,7 +142,7 @@ class TestPatterns:
 class TestPersistence:
     def test_round_trips_through_disk(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        original = SpacesConfig(
+        original = PagesConfig(
             pages=6,
             offset=20,
             monitors=["A", "B"],
@@ -150,7 +150,7 @@ class TestPersistence:
         )
         original.save()
 
-        restored = SpacesConfig.load()
+        restored = PagesConfig.load()
         assert restored.pages == 6
         assert restored.offset == 20
         assert restored.monitors == ["A", "B"]
@@ -159,13 +159,13 @@ class TestPersistence:
 
     def test_missing_file_yields_defaults(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        assert SpacesConfig.load().apps == []
+        assert PagesConfig.load().apps == []
 
     def test_paths_follow_xdg_at_call_time(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        assert state_path() == tmp_path / "hypr-spaces" / "spaces.json"
+        assert state_path() == tmp_path / "hyprpages" / "pages.json"
 
     def test_saved_file_is_readable_json(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        SpacesConfig(monitors=["A"]).save()
+        PagesConfig(monitors=["A"]).save()
         assert json.loads(state_path().read_text())["monitors"] == ["A"]

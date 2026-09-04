@@ -15,7 +15,7 @@ Hyprland cannot run in CI and will rot.
 
 ```bash
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
-.venv/bin/mypy hypr_spaces
+.venv/bin/mypy hyprpages
 .venv/bin/pytest
 ```
 
@@ -23,9 +23,9 @@ Hyprland cannot run in CI and will rot.
 
 | Path | What it is |
 |---|---|
-| `hypr_spaces/` | The CLI. All introspection and config writing lives here so it is testable. |
-| `plugin/kvark.spaces/` | The QML editor. Pure UI: it shells out to the CLI. |
-| `bin/hypr-spaces` | Entry point, so the repo runs without installation. |
+| `hyprpages/` | The CLI. All introspection and config writing lives here so it is testable. |
+| `plugin/kvark.hyprpages/` | The QML editor. Pure UI: it shells out to the CLI. |
+| `bin/hyprpages` | Entry point, so the repo runs without installation. |
 
 ## Working on the QML
 
@@ -34,7 +34,7 @@ layer surface that wedges the compositor's screencopy. Lint before loading:
 
 ```bash
 mkdir -p /tmp/qmlimports && ln -sfn /usr/share/omarchy/shell /tmp/qmlimports/qs
-qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml plugin/kvark.spaces/*.qml
+qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml plugin/kvark.hyprpages/*.qml
 ```
 
 Two traps worth knowing:

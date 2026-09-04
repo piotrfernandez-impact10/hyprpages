@@ -1,4 +1,4 @@
-// Bar button that shows and hides the Spaces editor.
+// Bar button that shows and hides the Pages editor.
 //
 // NOT named BarWidget.qml: a plugin directory is an implicit QML module, so a
 // file with that name shadows the BarWidget base type it inherits from and the
@@ -15,7 +15,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "kvark.spaces"
+  moduleName: "kvark.hyprpages"
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -31,12 +31,12 @@ BarWidget {
     labelVisible: false
     fixedWidth: root.vertical ? -1 : Style.space(22)
     fixedHeight: root.vertical ? Style.space(22) : -1
-    tooltipText: "Spaces"
+    tooltipText: "Pages"
 
     onPressed: function (mouseButton) {
       if (!root.bar || mouseButton !== Qt.LeftButton) return
       // toggle, so the same button opens and closes it
-      root.bar.run("omarchy-shell shell toggle kvark.spaces")
+      root.bar.run("omarchy-shell shell toggle kvark.hyprpages")
     }
 
     Item {

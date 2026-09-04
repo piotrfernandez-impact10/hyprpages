@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from hypr_spaces import desktop
+from hyprpages import desktop
 
 ENTRIES = {
     "kitty.desktop": "[Desktop Entry]\nName=kitty\nIcon=kitty\n",

@@ -21,12 +21,12 @@ jobs:
       # runner with no compositor.
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy hypr_spaces
+      - run: mypy hyprpages
       - run: pytest
       # A subcommand that never runs is a subcommand that silently broke.
       - name: CLI smoke test
         run: |
-          hypr-spaces --version
+          hyprpages --version
           for c in state capture move apps launch focus page apply; do
-            hypr-spaces "$c" --help > /dev/null
+            hyprpages "$c" --help > /dev/null
           done

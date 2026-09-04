@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "kvark.spaces",
-  "name": "Spaces",
+  "id": "kvark.hyprpages",
+  "name": "Pages",
   "version": "0.1.0",
-  "author": "Impact10",
+  "author": "Kvark",
   "description": "Visual editor for pages: see what is running and drag it where it belongs",
   "kinds": [
     "overlay",
@@ -11,12 +11,12 @@
   ],
   "keepLoaded": false,
   "entryPoints": {
-    "overlay": "Spaces.qml",
-    "barWidget": "SpacesBarWidget.qml"
+    "overlay": "Pages.qml",
+    "barWidget": "PagesBarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Spaces",
-    "description": "Show or hide the Spaces editor",
+    "displayName": "Pages",
+    "description": "Show or hide the Pages editor",
     "category": "Compositor",
     "allowMultiple": false
   }

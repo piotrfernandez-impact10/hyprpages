@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import pytest
 
-from hypr_spaces import capture
+from hyprpages import capture
 
 
 @pytest.fixture(autouse=True)

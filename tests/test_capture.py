@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from hypr_spaces import capture
+from hyprpages import capture
 
 
 @pytest.fixture

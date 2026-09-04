@@ -1,10 +1,10 @@
 # Maintainer: see the repository
-pkgname=hypr-spaces
+pkgname=hyprpages
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Visual editor for Hyprland spaces: see what is running, arrange it, generate the config"
 arch=('any')
-url="https://github.com/OWNER/hypr-spaces"
+url="https://github.com/OWNER/hyprpages"
 license=('MIT')
 depends=('python' 'hyprland')
 optdepends=(
@@ -28,5 +28,5 @@ package() {
 
   # The Quickshell editor plugin, for Omarchy-based setups.
   install -d "$pkgdir/usr/share/$pkgname/plugin"
-  cp -r plugin/kvark.spaces "$pkgdir/usr/share/$pkgname/plugin/"
+  cp -r plugin/kvark.hyprpages "$pkgdir/usr/share/$pkgname/plugin/"
 }

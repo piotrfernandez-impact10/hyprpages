@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from hypr_spaces import cli
-from hypr_spaces.model import App, SpacesConfig
+from hyprpages import cli
+from hyprpages.model import App, PagesConfig
 
 MONITORS = [
     {"id": 0, "name": "HDMI-A-1", "x": 2560, "y": 0, "width": 3440, "height": 1440},
@@ -109,42 +109,42 @@ class TestNotLoadedWarning:
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         hypr = tmp_path / "hypr"
         hypr.mkdir()
-        (hypr / "hyprland.lua").write_text('require("hypr.spaces")\n')
+        (hypr / "hyprland.lua").write_text('require("hypr.hyprpages")\n')
 
-        cli._warn_if_not_loaded(hypr / "spaces.lua", "lua")
+        cli._warn_if_not_loaded(hypr / "hyprpages.lua", "lua")
         assert capsys.readouterr().err == ""
 
     def test_warns_when_nothing_loads_the_file(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         (tmp_path / "hypr").mkdir()
 
-        cli._warn_if_not_loaded(tmp_path / "hypr" / "spaces.lua", "lua")
-        assert 'require("hypr.spaces")' in capsys.readouterr().err
+        cli._warn_if_not_loaded(tmp_path / "hypr" / "hyprpages.lua", "lua")
+        assert 'require("hypr.hyprpages")' in capsys.readouterr().err
 
     def test_conf_format_names_the_source_line(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         (tmp_path / "hypr").mkdir()
 
-        cli._warn_if_not_loaded(tmp_path / "hypr" / "spaces.conf", "conf")
-        assert "source = ~/.config/hypr/spaces.conf" in capsys.readouterr().err
+        cli._warn_if_not_loaded(tmp_path / "hypr" / "hyprpages.conf", "conf")
+        assert "source = ~/.config/hypr/hyprpages.conf" in capsys.readouterr().err
 
 
 class TestApplyEndToEnd:
     def test_writes_the_chosen_format_and_reports_where(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        SpacesConfig(monitors=["A", "B"], apps=[App(pattern="^x$", page=1, monitor="B")]).save()
+        PagesConfig(monitors=["A", "B"], apps=[App(pattern="^x$", page=1, monitor="B")]).save()
         monkeypatch.setattr(cli.hypr, "reload", lambda: None)
         monkeypatch.setattr(cli.hypr, "config_errors", lambda: "")
 
         assert cli.main(["apply", "--format", "conf"]) == 0
 
-        written = (tmp_path / "hypr" / "spaces.conf").read_text()
+        written = (tmp_path / "hypr" / "hyprpages.conf").read_text()
         assert "windowrule = workspace 11 silent, class:^x$" in written
         assert "wrote" in capsys.readouterr().out
 
     def test_config_errors_fail_the_command(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        SpacesConfig(monitors=["A"]).save()
+        PagesConfig(monitors=["A"]).save()
         monkeypatch.setattr(cli.hypr, "reload", lambda: None)
         monkeypatch.setattr(cli.hypr, "config_errors", lambda: "line 3: bad rule")
 
@@ -152,10 +152,10 @@ class TestApplyEndToEnd:
 
     def test_dry_run_writes_nothing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        SpacesConfig(monitors=["A"]).save()
+        PagesConfig(monitors=["A"]).save()
 
         assert cli.main(["apply", "--dry-run", "--format", "lua"]) == 0
-        assert not (tmp_path / "hypr" / "spaces.lua").exists()
+        assert not (tmp_path / "hypr" / "hyprpages.lua").exists()
 
 
 class TestErrorHandling:
