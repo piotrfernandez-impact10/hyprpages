@@ -39,13 +39,9 @@ def monitors() -> list[dict]:
             "description": m.get("description", ""),
             "width": m.get("width"),
             "height": m.get("height"),
-            # Logical size, which is the space windows are positioned in.
-            # `width` is the mode in physical pixels; on a scaled monitor the
-            # two differ, and drawing windows against the physical size would
-            # shrink them by the scale factor. Invisible at scale 1, wrong at
-            # 1.25, 1.5 or 2 - which is most laptops.
-            "logicalWidth": round((m.get("width") or 0) / (m.get("scale") or 1)),
-            "logicalHeight": round((m.get("height") or 0) / (m.get("scale") or 1)),
+            # Logical size: the space windows are positioned in, which is what
+            # the editor draws.
+            **_logical_size(m),
             # Physical placement, so the editor can mirror the desk layout
             # rather than guessing an order.
             "x": m.get("x", 0),
@@ -59,6 +55,34 @@ def monitors() -> list[dict]:
         }
         for m in mons
     ]
+
+
+# wl_output transforms 1, 3, 5 and 7 are the quarter turns; the rest are
+# upright or flipped upright.
+_ROTATED = {1, 3, 5, 7}
+
+
+def _logical_size(monitor: dict) -> dict:
+    """The space a monitor occupies, from the mode it reports.
+
+    Two corrections, both invisible on an unscaled landscape screen and both
+    wrong everywhere else:
+
+    * `width`/`height` are the mode in physical pixels, while windows are
+      positioned in logical coordinates. They differ by `scale`.
+    * The mode is reported unrotated. A rotated monitor occupies its height in
+      width - confirmed by placing a second output beside a transform-3 one and
+      watching where the compositor put it.
+    """
+    width = monitor.get("width") or 0
+    height = monitor.get("height") or 0
+    scale = monitor.get("scale") or 1
+    if monitor.get("transform", 0) in _ROTATED:
+        width, height = height, width
+    return {
+        "logicalWidth": round(width / scale),
+        "logicalHeight": round(height / scale),
+    }
 
 
 def clients() -> list[dict]:

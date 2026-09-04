@@ -110,6 +110,30 @@ class TestProjection:
         window = {"at": [0, 0], "size": [1707, 960]}
         assert window["size"][0] == logical_w
 
+    @pytest.mark.parametrize("transform", [1, 3, 5, 7])
+    def test_a_rotated_monitor_swaps_its_dimensions(self, transform):
+        """Hyprland reports the mode unrotated, but a quarter-turned monitor
+        occupies its height in width. Confirmed on a live compositor: a second
+        output auto-placed beside a transform-3 1920x1080 screen landed 1080px
+        along, not 1920."""
+        from hyprpages.hypr import _logical_size
+
+        size = _logical_size({"width": 1920, "height": 1080, "scale": 1, "transform": transform})
+        assert (size["logicalWidth"], size["logicalHeight"]) == (1080, 1920)
+
+    @pytest.mark.parametrize("transform", [0, 2, 4, 6])
+    def test_upright_and_flipped_monitors_keep_their_shape(self, transform):
+        from hyprpages.hypr import _logical_size
+
+        size = _logical_size({"width": 1920, "height": 1080, "scale": 1, "transform": transform})
+        assert (size["logicalWidth"], size["logicalHeight"]) == (1920, 1080)
+
+    def test_rotation_and_scaling_together(self):
+        from hyprpages.hypr import _logical_size
+
+        size = _logical_size({"width": 2560, "height": 1440, "scale": 2, "transform": 1})
+        assert (size["logicalWidth"], size["logicalHeight"]) == (720, 1280)
+
     def test_unscaled_monitors_are_unaffected(self):
         monitor = {"width": 2560, "height": 1440, "scale": 1}
         assert round(monitor["width"] / monitor["scale"]) == monitor["width"]
