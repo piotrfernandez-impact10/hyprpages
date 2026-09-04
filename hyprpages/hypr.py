@@ -39,6 +39,13 @@ def monitors() -> list[dict]:
             "description": m.get("description", ""),
             "width": m.get("width"),
             "height": m.get("height"),
+            # Logical size, which is the space windows are positioned in.
+            # `width` is the mode in physical pixels; on a scaled monitor the
+            # two differ, and drawing windows against the physical size would
+            # shrink them by the scale factor. Invisible at scale 1, wrong at
+            # 1.25, 1.5 or 2 - which is most laptops.
+            "logicalWidth": round((m.get("width") or 0) / (m.get("scale") or 1)),
+            "logicalHeight": round((m.get("height") or 0) / (m.get("scale") or 1)),
             # Physical placement, so the editor can mirror the desk layout
             # rather than guessing an order.
             "x": m.get("x", 0),

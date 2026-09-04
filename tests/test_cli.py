@@ -75,6 +75,35 @@ class TestInferMonitorOrder:
         assert cli.infer_monitor_order(MONITORS, 10)[1] == "DP-3"
 
 
+class TestMonitorShapes:
+    """Configurations other than the author's own two side-by-side screens."""
+
+    def test_single_monitor_needs_no_pairing(self):
+        from hyprpages.model import PagesConfig
+
+        cfg = PagesConfig(monitors=["eDP-1"])
+        assert "workspace.active" not in cfg.to_lua()
+        assert cfg.workspace_for(2, "eDP-1") == 2
+
+    def test_three_monitors_get_three_bands(self):
+        from hyprpages.model import PagesConfig
+
+        cfg = PagesConfig(monitors=["DP-1", "DP-2", "HDMI-A-1"])
+        assert cfg.workspace_for(3, "HDMI-A-1") == 23
+        assert cfg.page_of(23) == (3, "HDMI-A-1")
+
+    def test_a_configured_monitor_that_is_unplugged_emits_no_rule(self):
+        """Better a comment than a rule pointing at a workspace that is not
+        pinned to anything."""
+        from hyprpages.model import App, PagesConfig
+
+        cfg = PagesConfig(
+            monitors=["HDMI-A-1"],
+            apps=[App(pattern="^steam$", page=4, monitor="DP-9", label="steam")],
+        )
+        assert "-- (no rules for ^steam$)" in cfg.to_lua()
+
+
 class TestLaunchCommand:
     def test_prefers_uwsm_when_present(self, monkeypatch):
         monkeypatch.setattr(cli.shutil, "which", lambda name: f"/usr/bin/{name}")

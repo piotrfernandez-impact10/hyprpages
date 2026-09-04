@@ -164,6 +164,11 @@ Item {
     return page + (root.config.offset || 10) * index
   }
 
+  // Windows are positioned in logical coordinates, so the miniature must be
+  // drawn in them too; on a scaled monitor the mode's pixel size is larger.
+  function logicalWidth(m) { return m.logicalWidth || m.width }
+  function logicalHeight(m) { return m.logicalHeight || m.height }
+
   function monitorByName(name) {
     for (var i = 0; i < root.monitors.length; i++)
       if (root.monitors[i].name === name) return root.monitors[i]
@@ -180,8 +185,8 @@ Item {
       var m = root.monitors[i]
       minX = Math.min(minX, m.x)
       minY = Math.min(minY, m.y)
-      maxX = Math.max(maxX, m.x + m.width)
-      maxY = Math.max(maxY, m.y + m.height)
+      maxX = Math.max(maxX, m.x + root.logicalWidth(m))
+      maxY = Math.max(maxY, m.y + root.logicalHeight(m))
     }
     return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) }
   }
@@ -801,8 +806,8 @@ Item {
               return {
                 x: canvas.px(m.x) + canvas.gap,
                 y: canvas.py(m.y) + canvas.gap,
-                width: Math.max(1, m.width * canvas.fit - canvas.gap * 2),
-                height: Math.max(1, m.height * canvas.fit - canvas.gap * 2)
+                width: Math.max(1, root.logicalWidth(m) * canvas.fit - canvas.gap * 2),
+                height: Math.max(1, root.logicalHeight(m) * canvas.fit - canvas.gap * 2)
               }
             }
 
@@ -813,8 +818,8 @@ Item {
               // The area windows may occupy: the screen minus its own outline.
               var innerW = Math.max(1, r.width - canvas.inset * 2)
               var innerH = Math.max(1, r.height - canvas.inset * 2)
-              var kx = innerW / (m.width * canvas.fit)
-              var ky = innerH / (m.height * canvas.fit)
+              var kx = innerW / (root.logicalWidth(m) * canvas.fit)
+              var ky = innerH / (root.logicalHeight(m) * canvas.fit)
               return {
                 x: r.x + canvas.inset + (w.at[0] - m.x) * canvas.fit * kx,
                 y: r.y + canvas.inset + (w.at[1] - m.y) * canvas.fit * ky,

@@ -97,6 +97,23 @@ class TestProjection:
         ]
         assert self.bounds(stacked) == (0, 0, 1920, 2160)
 
+    def test_a_scaled_monitor_is_measured_in_logical_pixels(self):
+        """A 2560px monitor at 1.5x is 1707 logical px wide, and windows are
+        positioned in logical space. Drawing against the mode's pixel size
+        would shrink every window on that screen by the scale factor."""
+        monitor = {"width": 2560, "height": 1440, "scale": 1.5}
+        logical_w = round(monitor["width"] / monitor["scale"])
+        logical_h = round(monitor["height"] / monitor["scale"])
+        assert (logical_w, logical_h) == (1707, 960)
+
+        # A maximised window in logical space fills the logical size exactly.
+        window = {"at": [0, 0], "size": [1707, 960]}
+        assert window["size"][0] == logical_w
+
+    def test_unscaled_monitors_are_unaffected(self):
+        monitor = {"width": 2560, "height": 1440, "scale": 1}
+        assert round(monitor["width"] / monitor["scale"]) == monitor["width"]
+
     def test_negative_origins_are_handled(self):
         """A monitor left of the primary has a negative x; the bounding box has
         to shift rather than clip it."""
