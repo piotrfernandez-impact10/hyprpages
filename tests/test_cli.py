@@ -133,6 +133,44 @@ class TestLaunchCommand:
         assert cli._launch_command("spotify") is None
 
 
+class TestMove:
+    CLIENTS = [
+        {"address": "0xAAA", "initialClass": "foot", "workspace": {"name": "1"}},
+        {"address": "0xBBB", "initialClass": "foot", "workspace": {"name": "1"}},
+        {"address": "0xCCC", "initialClass": "steam", "workspace": {"name": "1"}},
+    ]
+
+    def _run(self, monkeypatch, tmp_path, argv):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        PagesConfig(monitors=["A", "B"]).save()
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: self.CLIENTS)
+        monkeypatch.setattr(cli.hypr, "monitors", lambda: [])
+        moved = []
+        monkeypatch.setattr(
+            cli.hypr, "move_to_workspace", lambda addr, ws: moved.append((addr, ws))
+        )
+        assert cli.main(argv) == 0
+        return moved
+
+    def test_without_an_address_the_whole_class_moves(self, monkeypatch, tmp_path):
+        """Right for the menu: "send this app to page 4"."""
+        moved = self._run(monkeypatch, tmp_path, ["move", "foot", "--page", "2", "--monitor", "A"])
+        assert sorted(a for a, _ in moved) == ["0xAAA", "0xBBB"]
+
+    def test_an_address_moves_only_that_window(self, monkeypatch, tmp_path):
+        """Right for a drag: dragging one of two terminals must not take both."""
+        moved = self._run(
+            monkeypatch,
+            tmp_path,
+            ["move", "foot", "--page", "2", "--monitor", "A", "--address", "0xBBB"],
+        )
+        assert moved == [("0xBBB", 2)]
+
+    def test_a_window_already_there_is_left_alone(self, monkeypatch, tmp_path):
+        moved = self._run(monkeypatch, tmp_path, ["move", "foot", "--page", "1", "--monitor", "A"])
+        assert moved == []
+
+
 class TestNotLoadedWarning:
     def test_quiet_once_the_lua_config_requires_it(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))

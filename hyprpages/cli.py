@@ -56,7 +56,9 @@ def infer_monitor_order(monitors: list[dict], offset: int) -> list[str]:
 
 def build_state() -> dict:
     """Everything the editor needs to draw the current desktop."""
-    monitors = hypr.monitors()
+    # A mirrored output shows another screen's content at the same coordinates;
+    # drawing it as its own screen would stack two rectangles on one spot.
+    monitors = [m for m in hypr.monitors() if not m.get("mirrorOf")]
     cfg = PagesConfig.load()
     if not cfg.monitors:
         cfg.monitors = infer_monitor_order(monitors, cfg.offset)
@@ -128,11 +130,15 @@ def cmd_capture(_args) -> int:
 
 
 def cmd_move(args) -> int:
-    """Move the live windows of a class to a page, and record the rule.
+    """Move live windows of a class to a page, and record the rule.
 
     Editing the rule alone changes nothing the user can see: a placement rule
     only takes effect when a window next opens. Dragging a window in the editor
     has to move the real window too, or the gesture appears to do nothing.
+
+    With --address only that one window moves. Dragging one of three browser
+    windows should move the one you dragged; the rule still governs where the
+    next one opens, which is the part that applies to the class as a whole.
     """
     cfg = PagesConfig.load()
     if not cfg.monitors:
@@ -145,9 +151,13 @@ def cmd_move(args) -> int:
 
     moved = 0
     for client in hypr.query("clients") or []:
-        cls = client.get("initialClass") or client.get("class") or ""
-        if cls != args.window_class:
-            continue
+        if args.address:
+            if client.get("address") != args.address:
+                continue
+        else:
+            cls = client.get("initialClass") or client.get("class") or ""
+            if cls != args.window_class:
+                continue
         if client.get("workspace", {}).get("name") == str(workspace):
             continue  # already there
         hypr.move_to_workspace(client["address"], workspace)
@@ -351,6 +361,11 @@ def main(argv: list[str] | None = None) -> int:
     move_parser.add_argument("window_class", help="exact window class to move")
     move_parser.add_argument("--page", type=int, required=True)
     move_parser.add_argument("--monitor", required=True)
+    move_parser.add_argument(
+        "--address",
+        default="",
+        help="move only this window (0x...), instead of every window of the class",
+    )
     move_parser.set_defaults(func=cmd_move)
 
     sub.add_parser("apps", help="list launchable applications as JSON").set_defaults(func=cmd_apps)

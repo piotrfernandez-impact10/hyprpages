@@ -378,11 +378,17 @@ hl.on("workspace.active", function(ws)
   page_syncing = true
   for i, name in ipairs(page_monitors) do
     if name ~= monitor then
-      hl.dispatch(hl.dsp.focus({{ monitor = name }}))
-      hl.dispatch(hl.dsp.focus({{ workspace = tostring(page + page_offset * (i - 1)) }}))
+      -- pcall: a monitor named here may be unplugged, and one bad focus must
+      -- not abandon the rest of the screens mid-switch.
+      pcall(function()
+        hl.dispatch(hl.dsp.focus({{ monitor = name }}))
+        hl.dispatch(hl.dsp.focus({{ workspace = tostring(page + page_offset * (i - 1)) }}))
+      end)
     end
   end
-  hl.dispatch(hl.dsp.focus({{ monitor = monitor }}))
+  pcall(function()
+    hl.dispatch(hl.dsp.focus({{ monitor = monitor }}))
+  end)
   page_syncing = false
 end)
 """

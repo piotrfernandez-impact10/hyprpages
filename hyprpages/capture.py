@@ -209,6 +209,9 @@ def describe(window: dict, kitty_cache: dict[str, dict], tabs: list | None) -> d
 
     return {
         "class": cls,
+        # Identifies this window rather than its class, so a drag can move the
+        # one window the user dragged.
+        "address": window.get("address", ""),
         "icon": desktop.icon_for(cls, comm),
         "kind": kind,
         "workspace": window.get("workspace", {}).get("name", ""),

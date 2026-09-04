@@ -359,10 +359,14 @@ Item {
 
   // Move the live windows of a class, so a drag has a visible effect at once.
   // The rule it also records is what makes the placement stick next time.
-  function moveLive(windowClass, page, monitor) {
+  // `address` moves just that window; without it every window of the class
+  // moves, which is right for the menu ("send this app to page 4") and wrong
+  // for a drag ("put this window there").
+  function moveLive(windowClass, page, monitor, address) {
     if (!root.opened || !windowClass || !monitor) return
-    moveProcess.command = [root.cli, "move", windowClass,
-                           "--page", String(page), "--monitor", monitor]
+    var args = [root.cli, "move", windowClass, "--page", String(page), "--monitor", monitor]
+    if (address) args = args.concat(["--address", address])
+    moveProcess.command = args
     moveProcess.running = true
   }
 
@@ -968,7 +972,8 @@ Item {
                                tile.modelData.floating,
                                tile.modelData.size && tile.modelData.size.length === 2
                                  ? tile.modelData.size[0] + " " + tile.modelData.size[1] : "")
-                    root.moveLive(tile.modelData.class, root.currentPage, canvas.snap.monitor)
+                    root.moveLive(tile.modelData.class, root.currentPage,
+                                  canvas.snap.monitor, tile.modelData.address)
                   }
                   canvas.snap = null
                 }

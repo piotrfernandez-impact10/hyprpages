@@ -49,6 +49,8 @@ def monitors() -> list[dict]:
             "scale": m.get("scale", 1),
             "transform": m.get("transform", 0),
             "reserved": m.get("reserved", [0, 0, 0, 0]),
+            # "none" when independent; otherwise the screen this one mirrors.
+            "mirrorOf": "" if m.get("mirrorOf") in (None, "none") else m.get("mirrorOf"),
             "refresh": round(m.get("refreshRate", 0), 2),
             "active_workspace": m.get("activeWorkspace", {}).get("name"),
             "focused": m.get("focused", False),
