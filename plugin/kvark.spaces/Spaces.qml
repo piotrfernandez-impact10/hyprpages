@@ -252,6 +252,20 @@ Item {
     root.dirty = true
   }
 
+  // "Add something here": focus the page's workspace on that screen, close the
+  // editor, and hand over to Omarchy's own app launcher. Whatever is started
+  // next opens on the focused workspace, so the launcher needs to know nothing
+  // about pages, and the user gets the launcher they already know rather than
+  // a second-rate copy of it.
+  function addTo(page, monitor) {
+    if (!monitor) return
+    addProcess.command = ["sh", "-c",
+      "hypr-spaces focus --page " + page + " --monitor '" + monitor
+      + "' && omarchy-menu toggle apps"]
+    root.dismiss()
+    addProcess.running = true
+  }
+
   // Move the live windows of a class, so a drag has a visible effect at once.
   // The rule it also records is what makes the placement stick next time.
   function moveLive(windowClass, page, monitor) {
@@ -288,6 +302,16 @@ Item {
         }
       }
     }
+    stderr: StdioCollector {
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.error = message
+      }
+    }
+  }
+
+  Process {
+    id: addProcess
     stderr: StdioCollector {
       onStreamFinished: {
         var message = String(text || "").trim()
@@ -576,6 +600,42 @@ Item {
             function px(worldX) { return canvas.offsetX + (worldX - canvas.bounds.x) * canvas.fit }
             function py(worldY) { return canvas.offsetY + (worldY - canvas.bounds.y) * canvas.fit }
 
+            // Screens are drawn inset so neighbouring outlines never touch:
+            // two rectangles sharing an edge read as one box with a divider
+            // through it, which is the opposite of what the outline is for.
+            readonly property real gap: Math.max(3, Style.space(5))
+            // Windows are drawn over the screens, so a maximised one would
+            // paint straight over the outline that says "this is a monitor".
+            // Reserve the border's own width plus a hair inside every screen.
+            readonly property real screenBorder: 2
+            readonly property real inset: canvas.screenBorder + 1
+
+            function screenRect(m) {
+              return {
+                x: canvas.px(m.x) + canvas.gap,
+                y: canvas.py(m.y) + canvas.gap,
+                width: Math.max(1, m.width * canvas.fit - canvas.gap * 2),
+                height: Math.max(1, m.height * canvas.fit - canvas.gap * 2)
+              }
+            }
+
+            // Windows are placed within the inset screen, scaled by the same
+            // factor, so the picture stays proportional and nothing overhangs.
+            function windowRect(w, m) {
+              var r = canvas.screenRect(m)
+              // The area windows may occupy: the screen minus its own outline.
+              var innerW = Math.max(1, r.width - canvas.inset * 2)
+              var innerH = Math.max(1, r.height - canvas.inset * 2)
+              var kx = innerW / (m.width * canvas.fit)
+              var ky = innerH / (m.height * canvas.fit)
+              return {
+                x: r.x + canvas.inset + (w.at[0] - m.x) * canvas.fit * kx,
+                y: r.y + canvas.inset + (w.at[1] - m.y) * canvas.fit * ky,
+                width: w.size[0] * canvas.fit * kx,
+                height: w.size[1] * canvas.fit * ky
+              }
+            }
+
             // Snap preview. While a tile is dragged, this is the screen it
             // would land on and the box it would occupy there; null when the
             // pointer is over no screen, which is also how a drop is refused.
@@ -584,9 +644,9 @@ Item {
             function screenAt(canvasX, canvasY) {
               for (var i = 0; i < root.monitors.length; i++) {
                 var m = root.monitors[i]
-                var left = canvas.px(m.x), top = canvas.py(m.y)
-                if (canvasX >= left && canvasX <= left + m.width * canvas.fit
-                    && canvasY >= top && canvasY <= top + m.height * canvas.fit)
+                var r = canvas.screenRect(m)
+                if (canvasX >= r.x && canvasX <= r.x + r.width
+                    && canvasY >= r.y && canvasY <= r.y + r.height)
                   return m
               }
               return null
@@ -602,14 +662,14 @@ Item {
                 canvas.snap = null
                 return
               }
-              var left = canvas.px(screen.x), top = canvas.py(screen.y)
-              var w = screen.width * canvas.fit, h = screen.height * canvas.fit
+              var r = canvas.screenRect(screen)
+              var pad = canvas.inset
               // Clamped inside the target screen, so the preview always shows a
-              // box that could really exist there.
+              // box that could really exist there - and never over the outline.
               canvas.snap = {
                 monitor: screen.name,
-                x: Math.max(left, Math.min(tile.x, left + w - tile.width)),
-                y: Math.max(top, Math.min(tile.y, top + h - tile.height)),
+                x: Math.max(r.x + pad, Math.min(tile.x, r.x + r.width - pad - tile.width)),
+                y: Math.max(r.y + pad, Math.min(tile.y, r.y + r.height - pad - tile.height)),
                 width: tile.width,
                 height: tile.height
               }
@@ -624,10 +684,11 @@ Item {
                 readonly property bool targeted:
                   canvas.snap && canvas.snap.monitor === screen.modelData.name
 
-                x: canvas.px(screen.modelData.x)
-                y: canvas.py(screen.modelData.y)
-                width: screen.modelData.width * canvas.fit
-                height: screen.modelData.height * canvas.fit
+                readonly property var rect: canvas.screenRect(screen.modelData)
+                x: screen.rect.x
+                y: screen.rect.y
+                width: screen.rect.width
+                height: screen.rect.height
 
                 // The screen itself: a well, darker than the card it sits in,
                 // so windows read as resting inside it.
@@ -637,7 +698,7 @@ Item {
                   radius: Style.cornerRadius / 2
                   color: screen.targeted
                     ? Qt.lighter(root.screenWell, 1.5) : root.screenWell
-                  border.width: 2
+                  border.width: canvas.screenBorder
                   border.color: screen.targeted ? root.selectedText : root.screenEdge
 
                   Behavior on color { ColorAnimation { duration: 90 } }
@@ -663,6 +724,38 @@ Item {
                     color: root.mutedText
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.caption
+                  }
+                }
+
+                // Add an application to this page, on this screen.
+                Rectangle {
+                  id: addButton
+                  anchors.right: parent.right
+                  anchors.bottom: parent.bottom
+                  anchors.margins: Style.spacing.xs
+                  width: Style.space(22)
+                  height: Style.space(22)
+                  radius: width / 2
+                  color: addHover.hovered ? root.selectedBackground
+                                          : Qt.rgba(0, 0, 0, 0.35)
+                  border.width: 1
+                  border.color: addHover.hovered ? root.selectedText : root.screenEdge
+
+                  Behavior on color { ColorAnimation { duration: 90 } }
+                  HoverHandler { id: addHover }
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: addHover.hovered ? root.selectedText : root.foreground
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.subtitle
+                    font.bold: true
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    onClicked: root.addTo(root.currentPage, screen.modelData.name)
                   }
                 }
 
@@ -696,12 +789,16 @@ Item {
                           && tile.modelData.size && tile.modelData.size.length === 2
 
                 visible: tile.placeable
-                homeX: tile.placeable ? canvas.px(tile.modelData.at[0]) : 0
-                homeY: tile.placeable ? canvas.py(tile.modelData.at[1]) : 0
+                readonly property var rect: tile.placeable
+                  ? canvas.windowRect(tile.modelData, tile.screenOf)
+                  : { x: 0, y: 0, width: 0, height: 0 }
+
+                homeX: tile.rect.x
+                homeY: tile.rect.y
                 x: tile.homeX
                 y: tile.homeY
-                width: tile.placeable ? tile.modelData.size[0] * canvas.fit : 0
-                height: tile.placeable ? tile.modelData.size[1] * canvas.fit : 0
+                width: tile.rect.width
+                height: tile.rect.height
 
                 entry: tile.modelData
                 iconSource: tile.modelData.icon
@@ -763,7 +860,7 @@ Item {
 
           Text {
             Layout.fillWidth: true
-            text: "drag a window between screens   ·   right-click for options   "
+            text: "+ adds an app here   ·   drag a window between screens   ·   right-click for options   "
                   + "·   1-0 page   ·   R refresh   ·   Enter apply   ·   Esc close"
             color: root.mutedText
             font.family: Style.font.menuFamily

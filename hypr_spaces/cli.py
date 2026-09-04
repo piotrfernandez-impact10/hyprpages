@@ -151,6 +151,27 @@ def cmd_move(args) -> int:
     return 0
 
 
+def cmd_focus(args) -> int:
+    """Make a page's workspace on one screen the focused one.
+
+    Used before opening an application launcher: whatever is started next opens
+    on the focused workspace, so this is how "add something here" is expressed
+    without the launcher having to know anything about pages.
+    """
+    cfg = SpacesConfig.load()
+    if not cfg.monitors:
+        cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
+
+    workspace = cfg.workspace_for(args.page, args.monitor)
+    if workspace is None:
+        print(f"no workspace for page {args.page} on {args.monitor}", file=sys.stderr)
+        return 1
+
+    hypr.focus_workspace(args.monitor, workspace)
+    print(f"focused workspace {workspace} on {args.monitor}")
+    return 0
+
+
 def cmd_apply(args) -> int:
     if args.stdin:
         # The editor hands back the whole configuration in one call rather
@@ -196,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
     move_parser.add_argument("--page", type=int, required=True)
     move_parser.add_argument("--monitor", required=True)
     move_parser.set_defaults(func=cmd_move)
+
+    focus_parser = sub.add_parser("focus", help="focus a page's workspace on one screen")
+    focus_parser.add_argument("--page", type=int, required=True)
+    focus_parser.add_argument("--monitor", required=True)
+    focus_parser.set_defaults(func=cmd_focus)
 
     apply_parser = sub.add_parser("apply", help="write spaces.lua and reload Hyprland")
     apply_parser.add_argument(

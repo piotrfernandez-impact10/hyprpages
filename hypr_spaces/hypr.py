@@ -97,6 +97,17 @@ def move_to_workspace(address: str, workspace: int, follow: bool = False) -> Non
     )
 
 
+def focus_workspace(monitor: str, workspace: int) -> None:
+    """Bring a workspace up on a given monitor and leave focus there.
+
+    The monitor is focused first: `focus({workspace})` acts on whichever
+    monitor currently has focus, so without this the workspace would be pulled
+    onto the wrong screen.
+    """
+    _hyprctl("dispatch", f"hl.dsp.focus({{ monitor = '{monitor}' }})")
+    _hyprctl("dispatch", f"hl.dsp.focus({{ workspace = '{workspace}' }})")
+
+
 def reload() -> None:
     _hyprctl("reload")
 
