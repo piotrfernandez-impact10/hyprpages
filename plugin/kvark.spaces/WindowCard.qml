@@ -41,10 +41,19 @@ Rectangle {
   // window gets a small box, exactly as on screen.
   clip: true
   radius: radiusPx
-  color: dragArea.drag.active ? Qt.lighter(surface, 1.4) : surface
+  color: dragArea.drag.active ? Qt.lighter(surface, 1.35)
+       : hoverArea.hovered ? Qt.lighter(surface, 1.15)
+       : surface
   border.width: 1
-  border.color: outline
-  opacity: dragArea.drag.active ? 0.7 : 1
+  border.color: dragArea.drag.active ? foreground : outline
+  // Lifted while dragging, so it reads as picked up rather than sliding.
+  scale: dragArea.drag.active ? 1.03 : 1
+  opacity: dragArea.drag.active ? 0.85 : 1
+
+  Behavior on color { ColorAnimation { duration: 90 } }
+  Behavior on scale { NumberAnimation { duration: 90 } }
+
+  HoverHandler { id: hoverArea }
 
   // Where the canvas says this window lives. Dragging breaks the x/y bindings,
   // so the card is put back here on release rather than left mid-air claiming
@@ -117,6 +126,7 @@ Rectangle {
         elide: Text.ElideRight
         font.family: card.fontFamily
         font.pixelSize: card.fontBody
+        font.bold: true
       }
 
       Text {
@@ -155,12 +165,11 @@ Rectangle {
     // Browsers: a tab count, expanded on hover rather than always listed --
     // a dozen tab titles per card would bury the layout the editor is for.
     Text {
-      visible: card.height > 46 && card.kind === "browser"
+      visible: card.height > 46 && card.kind === "browser" && !!card.detail.tabs
       Layout.fillWidth: true
-      text: {
-        if (!card.detail.tabs) return "tabs unavailable"
-        return card.detail.tabs.length + (card.detail.tabs.length === 1 ? " tab" : " tabs")
-      }
+      text: card.detail.tabs
+        ? card.detail.tabs.length + (card.detail.tabs.length === 1 ? " tab" : " tabs")
+        : ""
       color: card.foreground
       opacity: 0.5
       font.family: card.fontFamily

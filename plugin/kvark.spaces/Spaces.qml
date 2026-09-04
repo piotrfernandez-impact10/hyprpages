@@ -41,6 +41,17 @@ Item {
   property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
   readonly property int cornerRadius: Style.cornerRadius
 
+  // Two depths carry the whole diagram: a screen is a well cut into the card,
+  // a window is a surface resting inside it. Derived from the theme's own
+  // colours so this follows whatever theme is active.
+  readonly property color screenWell: Qt.darker(root.background, 1.45)
+  readonly property color screenEdge: Qt.rgba(root.foreground.r, root.foreground.g,
+                                              root.foreground.b, 0.22)
+  readonly property color windowFill: Qt.lighter(root.background, 1.55)
+  readonly property color windowEdge: Qt.rgba(root.foreground.r, root.foreground.g,
+                                              root.foreground.b, 0.35)
+  readonly property color mutedText: Qt.darker(root.foreground, 1.5)
+
   function open(payloadJson) {
     root.opened = true
     root.error = ""
@@ -51,10 +62,31 @@ Item {
 
   function close() {
     root.opened = false
+    root.stopWork()
+  }
+
+  // Nothing may run while the editor is hidden: no subprocesses, no pending
+  // state, no half-finished edit waiting to be applied by a later keystroke.
+  // The overlay is declared keepLoaded:false so it unloads entirely, and this
+  // makes the window between "hidden" and "unloaded" inert too.
+  function stopWork() {
+    stateProcess.running = false
+    moveProcess.running = false
+    applyProcess.running = false
+    canvas_snapReset()
+    root.closeMenu()
+    root.busy = false
+  }
+
+  // Declared as a function rather than touching canvas directly: the canvas
+  // lives inside the panel, which does not exist while the overlay is unloaded.
+  function canvas_snapReset() {
+    if (typeof canvas !== "undefined" && canvas) canvas.snap = null
   }
 
   function dismiss() {
     root.opened = false
+    root.stopWork()
     if (root.shell && typeof root.shell.hide === "function")
       root.shell.hide((root.manifest && root.manifest.id) || "kvark.spaces")
   }
@@ -65,6 +97,9 @@ Item {
   }
 
   function refresh() {
+    // Guarded so a late callback -- a move finishing after the user pressed
+    // Escape -- cannot start another read of the desktop behind their back.
+    if (!root.opened) return
     root.busy = true
     stateProcess.running = true
   }
@@ -99,6 +134,21 @@ Item {
   // window on the monitor it actually occupies, not the one a rule pins it to.
   function windowsOnPage(page) {
     return root.windows.filter(function (w) { return w.page === page })
+  }
+
+  function windowsOnScreen(page, monitorName) {
+    return root.windows.filter(function (w) {
+      return w.page === page && w.onMonitor === monitorName
+    })
+  }
+
+  // The workspace number a page maps to on a given screen, shown on the name
+  // plate so the miniature ties back to the numbers Hyprland actually uses.
+  function workspaceFor(page, monitorName) {
+    var names = root.monitorNames()
+    var index = names.indexOf(monitorName)
+    if (index < 0) return "?"
+    return page + (root.config.offset || 10) * index
   }
 
   function monitorByName(name) {
@@ -206,13 +256,14 @@ Item {
   // Move the live windows of a class, so a drag has a visible effect at once.
   // The rule it also records is what makes the placement stick next time.
   function moveLive(windowClass, page, monitor) {
-    if (!windowClass || !monitor) return
+    if (!root.opened || !windowClass || !monitor) return
     moveProcess.command = ["hypr-spaces", "move", windowClass,
                            "--page", String(page), "--monitor", monitor]
     moveProcess.running = true
   }
 
   function apply() {
+    if (!root.opened) return
     root.busy = true
     root.error = ""
     applyProcess.write(JSON.stringify(root.config))
@@ -294,6 +345,7 @@ Item {
     exclusionMode: ExclusionMode.Ignore
 
     Rectangle { anchors.fill: parent; color: root.scrim }
+    Rectangle { anchors.fill: parent; color: "black"; opacity: 0.35 }
     MouseArea { anchors.fill: parent; onClicked: root.dismiss() }
 
     // Right-click menu. A sibling of the card rather than a child of a tile,
@@ -309,8 +361,17 @@ Item {
 
     BorderSurface {
       id: card
-      width: Math.min(Style.space(1200), panel.width - Style.gapsOut * 4)
-      height: Math.min(Style.space(760), panel.height - Style.gapsOut * 4)
+      readonly property real desktopAspect: {
+        var b = root.desktopBounds()
+        return b.height > 0 ? b.width / b.height : 1.777
+      }
+      // Name plates hang below each screen, so the canvas needs a little more
+      // height than the screens themselves.
+      readonly property real plateRoom: Style.space(18)
+
+      width: Math.min(Style.space(1400), panel.width - Style.gapsOut * 4)
+      height: Math.min(panel.height - Style.gapsOut * 4,
+                       content.implicitHeight + card.padding * 2)
       radius: root.cornerRadius
       anchors.centerIn: parent
       color: root.background
@@ -344,26 +405,51 @@ Item {
         }
 
         ColumnLayout {
+          id: content
           anchors.fill: parent
           spacing: Style.spacing.md
 
           // Header ---------------------------------------------------------
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.spacing.md
+            spacing: Style.spacing.sm
+
+            Item {
+              Layout.preferredWidth: Style.space(16)
+              Layout.preferredHeight: Style.space(12)
+
+              Rectangle {
+                width: parent.width * 0.55
+                height: parent.height
+                radius: 1
+                color: "transparent"
+                border.width: 1
+                border.color: root.foreground
+              }
+
+              Rectangle {
+                x: parent.width * 0.62
+                y: parent.height * 0.15
+                width: parent.width * 0.38
+                height: parent.height * 0.7
+                radius: 1
+                color: "transparent"
+                border.width: 1
+                border.color: root.foreground
+              }
+            }
 
             Text {
               text: "Spaces"
               color: root.foreground
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.title
+              font.pixelSize: Style.font.heading
               font.bold: true
             }
 
             Text {
               text: "page " + root.currentPage
-              color: root.foreground
-              opacity: 0.6
+              color: root.mutedText
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
             }
@@ -373,53 +459,93 @@ Item {
             Text {
               visible: root.error !== ""
               text: root.error
-              color: root.foreground
-              opacity: 0.9
+              color: Color.urgent
               elide: Text.ElideRight
-              Layout.maximumWidth: Style.space(420)
+              Layout.maximumWidth: Style.space(360)
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.bodySmall
+              font.pixelSize: Style.font.caption
             }
 
+            // One status, three states, never two at once.
             Text {
-              text: root.busy ? "working..." : (root.dirty ? "unsaved - Enter to apply" : "saved")
-              color: root.foreground
-              opacity: 0.6
+              text: root.busy ? "working…" : root.dirty ? "unsaved · enter to apply" : "saved"
+              color: root.dirty ? root.selectedText : root.mutedText
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.bodySmall
+              font.pixelSize: Style.font.caption
+              font.bold: root.dirty
             }
           }
 
-          // Page selector --------------------------------------------------
+          PanelSeparator { Layout.fillWidth: true }
+
+          // Pages ------------------------------------------------------------
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.spacing.sm
+            spacing: Style.spacing.xs
+
+            PanelSectionHeader {
+              text: "PAGES"
+              foreground: root.foreground
+              fontFamily: Style.font.menuFamily
+            }
+
+            Item { Layout.preferredWidth: Style.spacing.sm }
+
             Repeater {
               model: root.config.pages || 10
+
               Rectangle {
                 id: pageChip
                 required property int index
                 readonly property int page: pageChip.index + 1
                 readonly property bool current: pageChip.page === root.currentPage
-                width: Style.space(34)
-                height: Style.space(28)
+                // A page with nothing on it should not look like one that has
+                // your terminals waiting on it.
+                readonly property bool occupied: root.windowsOnPage(pageChip.page).length > 0
+
+                Layout.preferredWidth: Style.space(26)
+                Layout.preferredHeight: Style.space(24)
                 radius: Style.cornerRadius / 2
-                color: pageChip.current ? root.selectedBackground : "transparent"
+                color: pageChip.current ? root.selectedBackground
+                     : chipHover.hovered ? Qt.lighter(root.background, 1.3)
+                     : "transparent"
                 border.width: 1
-                border.color: root.border
+                border.color: pageChip.current ? root.selectedText : root.screenEdge
+
+                Behavior on color { ColorAnimation { duration: 90 } }
+                HoverHandler { id: chipHover }
+
                 Text {
                   anchors.centerIn: parent
                   text: pageChip.page === 10 ? "0" : String(pageChip.page)
-                  color: pageChip.current ? root.selectedText : root.foreground
+                  color: pageChip.current ? root.selectedText
+                       : pageChip.occupied ? root.foreground : root.mutedText
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.bodySmall
+                  font.bold: pageChip.current
                 }
+
+                // A dot for "something lives here", so an unlabelled number is
+                // never ambiguous.
+                Rectangle {
+                  visible: pageChip.occupied && !pageChip.current
+                  width: 3
+                  height: 3
+                  radius: 1.5
+                  color: root.foreground
+                  opacity: 0.7
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.bottom: parent.bottom
+                  anchors.bottomMargin: 2
+                }
+
                 MouseArea {
                   anchors.fill: parent
                   onClicked: root.currentPage = pageChip.page
                 }
               }
             }
+
             Item { Layout.fillWidth: true }
           }
 
@@ -432,13 +558,19 @@ Item {
           Item {
             id: canvas
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            // Derived, not filled: the miniature is exactly as tall as the
+            // desktop's proportions require at this width.
+            Layout.preferredHeight: Math.min(
+              Style.space(560),
+              canvas.width / card.desktopAspect + card.plateRoom)
 
             readonly property var bounds: root.desktopBounds()
-            readonly property real fit: Math.min(width / bounds.width, height / bounds.height)
+            readonly property real drawHeight: Math.max(1, height - card.plateRoom)
+            readonly property real fit: Math.min(width / bounds.width,
+                                                 drawHeight / bounds.height)
             // Centred, so an asymmetric desk does not hug one edge.
             readonly property real offsetX: (width - bounds.width * fit) / 2
-            readonly property real offsetY: (height - bounds.height * fit) / 2
+            readonly property real offsetY: (canvas.drawHeight - bounds.height * fit) / 2
 
             function px(worldX) { return canvas.offsetX + (worldX - canvas.bounds.x) * canvas.fit }
             function py(worldY) { return canvas.offsetY + (worldY - canvas.bounds.y) * canvas.fit }
@@ -485,42 +617,66 @@ Item {
             Repeater {
               model: root.monitors
 
-              Rectangle {
+              Item {
                 id: screen
                 required property var modelData
+                readonly property bool targeted:
+                  canvas.snap && canvas.snap.monitor === screen.modelData.name
 
                 x: canvas.px(screen.modelData.x)
                 y: canvas.py(screen.modelData.y)
                 width: screen.modelData.width * canvas.fit
                 height: screen.modelData.height * canvas.fit
 
-                radius: Style.cornerRadius / 2
-                color: (canvas.snap && canvas.snap.monitor === screen.modelData.name)
-                       ? root.selectedBackground : "transparent"
-                border.width: 1
-                border.color: root.border
-
-                // The bar's reserved strip, drawn so the miniature matches what
-                // the eye sees rather than the raw output rectangle.
+                // The screen itself: a well, darker than the card it sits in,
+                // so windows read as resting inside it.
                 Rectangle {
-                  x: 0
-                  y: 0
-                  width: parent.width
-                  height: (screen.modelData.reserved && screen.modelData.reserved.length > 1
-                           ? screen.modelData.reserved[1] : 0) * canvas.fit
-                  color: root.foreground
-                  opacity: 0.08
+                  id: well
+                  anchors.fill: parent
+                  radius: Style.cornerRadius / 2
+                  color: screen.targeted
+                    ? Qt.lighter(root.screenWell, 1.5) : root.screenWell
+                  border.width: screen.targeted ? 2 : 1
+                  border.color: screen.targeted ? root.selectedText : root.screenEdge
+
+                  Behavior on color { ColorAnimation { duration: 90 } }
+
+                  // The bar's reserved strip, so the miniature matches what the
+                  // eye actually sees rather than the raw output rectangle.
+                  Rectangle {
+                    width: parent.width
+                    height: (screen.modelData.reserved && screen.modelData.reserved.length > 1
+                             ? screen.modelData.reserved[1] : 0) * canvas.fit
+                    topLeftRadius: parent.radius
+                    topRightRadius: parent.radius
+                    color: root.foreground
+                    opacity: 0.07
+                  }
+
+                  // Nothing here yet - said plainly rather than left ambiguous.
+                  Text {
+                    anchors.centerIn: parent
+                    visible: root.windowsOnScreen(root.currentPage,
+                                                  screen.modelData.name).length === 0
+                    text: "empty"
+                    color: root.mutedText
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.caption
+                  }
                 }
 
+                // Name plate, outside the screen like a label on the bezel.
                 Text {
                   anchors.horizontalCenter: parent.horizontalCenter
-                  anchors.bottom: parent.bottom
-                  anchors.bottomMargin: 2
-                  text: screen.modelData.name + "  " + screen.modelData.width + "x" + screen.modelData.height
-                  color: root.foreground
-                  opacity: 0.35
+                  anchors.top: parent.bottom
+                  anchors.topMargin: Style.spacing.xxs
+                  text: screen.modelData.name + "  ·  " + screen.modelData.width
+                        + "×" + screen.modelData.height
+                        + "  ·  ws " + root.workspaceFor(root.currentPage, screen.modelData.name)
+                  color: screen.targeted ? root.selectedText : root.mutedText
                   font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.bodySmall
+                  font.pixelSize: Style.font.caption
+                  font.bold: screen.targeted
                 }
               }
             }
@@ -566,8 +722,8 @@ Item {
                   canvas.snap = null
                 }
                 foreground: root.foreground
-                surface: root.background
-                outline: root.border
+                surface: root.windowFill
+                outline: root.windowEdge
                 pad: Style.spacing.sm
                 radiusPx: Style.cornerRadius / 2
                 fontFamily: Style.font.menuFamily
@@ -602,13 +758,15 @@ Item {
           }
 
           // Footer ----------------------------------------------------------
+          PanelSeparator { Layout.fillWidth: true }
+
           Text {
             Layout.fillWidth: true
-            text: "drag a window to another screen  ·  1-0 switch page  ·  R refresh  ·  Enter apply  ·  Esc close"
-            color: root.foreground
-            opacity: 0.45
+            text: "drag a window between screens   ·   right-click for options   "
+                  + "·   1-0 page   ·   R refresh   ·   Enter apply   ·   Esc close"
+            color: root.mutedText
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Style.font.caption
           }
         }
       }
