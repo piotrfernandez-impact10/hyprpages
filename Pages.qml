@@ -41,6 +41,9 @@ Item {
   property var config: ({ pages: 10, offset: 10, monitors: [], apps: [], pair_monitors: true })
   property bool dirty: false
   property int currentPage: 1
+  // Set once per open, then left alone so a refresh cannot yank the user off
+  // the page they are working on.
+  property bool followActivePage: false
 
   property color background: Color.menu.background
   property color foreground: Color.menu.text
@@ -62,6 +65,22 @@ Item {
   readonly property color mutedText: Qt.darker(root.foreground, 1.5)
 
   function open(payloadJson) {
+    // A caller may name the page: `omarchy-shell shell summon kvark.hyprpages
+    // '{"page": 3}'`. Otherwise open on the page you are actually on, since
+    // the editor is usually reached to adjust what is in front of you.
+    var requested = 0
+    try {
+      var payload = JSON.parse(String(payloadJson || "{}"))
+      requested = parseInt(payload.page, 10) || 0
+    } catch (e) {
+      requested = 0
+    }
+    if (requested >= 1 && requested <= (root.config.pages || 10)) {
+      root.currentPage = requested
+      root.followActivePage = false
+    } else {
+      root.followActivePage = true
+    }
     root.opened = true
     root.error = ""
     root.dirty = false
@@ -170,6 +189,27 @@ Item {
   // drawn in them too; on a scaled monitor the mode's pixel size is larger.
   function logicalWidth(m) { return m.logicalWidth || m.width }
   function logicalHeight(m) { return m.logicalHeight || m.height }
+
+  // The page the desktop is showing right now, from the focused monitor's
+  // workspace, falling back to any monitor that is on a recognisable page.
+  function activePage() {
+    var names = root.monitorNames()
+    var offset = root.config.offset || 10
+    var best = 0
+    for (var i = 0; i < root.monitors.length; i++) {
+      var m = root.monitors[i]
+      var index = names.indexOf(m.name)
+      if (index < 0) continue
+      var id = parseInt(m.active_workspace, 10)
+      if (isNaN(id)) continue
+      var page = id - offset * index
+      if (page >= 1 && page <= (root.config.pages || 10)) {
+        if (m.focused) return page
+        if (!best) best = page
+      }
+    }
+    return best
+  }
 
   function monitorByName(name) {
     for (var i = 0; i < root.monitors.length; i++)
@@ -418,6 +458,12 @@ Item {
           var parsed = JSON.parse(String(text || "{}"))
           root.monitors = parsed.monitors || []
           root.windows = parsed.windows || []
+
+          if (root.followActivePage) {
+            root.followActivePage = false
+            var active = root.activePage()
+            if (active > 0) root.currentPage = active
+          }
           // Unsaved edits win: a refresh fires after every move, launch and
           // `r`, and taking the on-disk config back would quietly undo what the
           // user just did while the header still read "unsaved".
@@ -569,11 +615,11 @@ Item {
       }
       // Name plates hang below each screen, so the canvas needs a little more
       // height than the screens themselves.
-      readonly property real plateRoom: Style.space(24)
+      readonly property real plateRoom: Style.space(28)
 
       width: Math.min(Style.space(1400), panel.width - Style.gapsOut * 4)
       height: Math.min(panel.height - Style.gapsOut * 4,
-                       content.implicitHeight + card.padding * 2)
+                       content.implicitHeight + card.padding * 2 + Style.spacing.sm)
       radius: root.cornerRadius
       anchors.centerIn: parent
       color: root.background
@@ -585,6 +631,10 @@ Item {
       Item {
         id: keyCatcher
         anchors.fill: parent
+        // BorderSurface's own `padding` only insets children that ask for it;
+        // filling the surface ignores it, which put every edge of text hard
+        // against the border.
+        anchors.margins: card.padding
         focus: true
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function (event) {
@@ -975,6 +1025,25 @@ Item {
                   }
                 }
 
+                // Name plate, below the screen like a label on the bezel. It
+                // carries the workspace number too, so the picture ties back to
+                // what Hyprland actually calls this space.
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.top: parent.bottom
+                  anchors.topMargin: Style.spacing.xs
+                  text: screen.modelData.name + "  ·  " + screen.modelData.width
+                        + "×" + screen.modelData.height
+                        + (screen.modelData.scale && screen.modelData.scale !== 1
+                           ? " @" + screen.modelData.scale + "×" : "")
+                        + "  ·  ws " + root.workspaceFor(root.currentPage,
+                                                         screen.modelData.name)
+                  color: screen.targeted ? root.selectedText : root.foreground
+                  opacity: screen.targeted ? 1 : 0.75
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
               }
             }
 

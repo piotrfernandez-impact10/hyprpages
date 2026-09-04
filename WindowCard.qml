@@ -98,16 +98,27 @@ Rectangle {
     }
   }
 
-  // Per-window controls. Revealed on hover so a page of windows is a picture
-  // of the layout at rest, not a grid of buttons. Above the drag area, and
-  // each takes its own press, so neither starts a drag.
+  // Per-window controls: always present, always the same size, always the same
+  // corner. A control that only appears on hover, or that grows with its tile,
+  // has to be hunted for; these are in one place on every window so the hand
+  // learns where they are.
+  readonly property real controlSize: 18
+  // Nothing to close without a window address - a tile drawn from stale state,
+  // or one the compositor did not give an address for. The button stays in
+  // place so the row never shifts, but says it cannot act.
+  readonly property bool canClose: !!(entry && entry.address)
+
   Row {
     id: controls
-    visible: hoverArea.hovered && !card.dragging && card.width > 60 && card.height > 40
+    // Hidden only when the tile genuinely cannot hold them, and while dragging,
+    // where they would be a target moving under the cursor.
+    visible: !card.dragging
+             && card.width > card.controlSize * 2 + 12
+             && card.height > card.controlSize + 8
     anchors.top: parent.top
     anchors.right: parent.right
-    anchors.margins: Math.max(2, card.pad / 2)
-    spacing: Math.max(2, card.pad / 2)
+    anchors.margins: 4
+    spacing: 4
     z: 5
 
     Repeater {
@@ -120,17 +131,27 @@ Rectangle {
         id: control
         required property var modelData
 
-        width: Math.max(16, Math.min(22, card.width * 0.12))
-        height: width
+        width: card.controlSize
+        height: card.controlSize
         radius: width / 2
         color: buttonHover.hovered
           ? (control.modelData.action === "close" ? "#a55555" : card.foreground)
-          : Qt.rgba(0, 0, 0, 0.55)
+          : Qt.rgba(0, 0, 0, 0.45)
         border.width: 1
-        border.color: card.outline
+        border.color: buttonHover.hovered
+          ? (control.modelData.action === "close" ? "#a55555" : card.foreground)
+          : card.outline
+
+        readonly property bool disabled:
+          control.modelData.action === "close" && !card.canClose
+
+        opacity: control.disabled ? 0.3 : (buttonHover.hovered ? 1 : 0.75)
 
         Behavior on color { ColorAnimation { duration: 90 } }
-        HoverHandler { id: buttonHover }
+        HoverHandler {
+          id: buttonHover
+          enabled: !control.disabled
+        }
 
         Text {
           anchors.centerIn: parent
@@ -143,6 +164,8 @@ Rectangle {
 
         MouseArea {
           anchors.fill: parent
+          enabled: !control.disabled
+          cursorShape: control.disabled ? Qt.ArrowCursor : Qt.PointingHandCursor
           onClicked: {
             if (control.modelData.action === "add") card.addRequested()
             else card.closeRequested()
@@ -154,10 +177,14 @@ Rectangle {
 
   // Centred as a block: icon, then the name directly beneath it, then whatever
   // detail the tile is tall enough to carry.
+  // Enough inset that a long path elides before it reaches the border rather
+  // than merging into it. Clamped so a narrow tile still has usable width.
+  readonly property real textInset: Math.min(12, Math.max(6, card.width * 0.06))
+
   ColumnLayout {
     id: content
     anchors.centerIn: parent
-    width: parent.width - card.pad * 2
+    width: Math.max(20, parent.width - card.textInset * 2)
     spacing: Math.max(2, card.pad / 2)
 
     Item {
