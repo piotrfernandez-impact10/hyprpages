@@ -210,6 +210,11 @@ def describe(window: dict, kitty_cache: dict[str, dict], tabs: list | None) -> d
         "kind": kind,
         "workspace": window.get("workspace", {}).get("name", ""),
         "floating": window.get("floating", False),
+        # Geometry in compositor coordinates. `at` is absolute across the whole
+        # desktop, not relative to the window's monitor, so the editor has to
+        # subtract the monitor origin before drawing a scale miniature.
+        "at": window.get("at", []),
         "size": window.get("size", []),
+        "monitorId": window.get("monitor", -1),
         "detail": detail,
     }

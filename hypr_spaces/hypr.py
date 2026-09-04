@@ -34,11 +34,18 @@ def monitors() -> list[dict]:
     mons.sort(key=lambda m: m.get("x", 0))
     return [
         {
+            "id": m.get("id", -1),
             "name": m["name"],
             "description": m.get("description", ""),
             "width": m.get("width"),
             "height": m.get("height"),
+            # Physical placement, so the editor can mirror the desk layout
+            # rather than guessing an order.
             "x": m.get("x", 0),
+            "y": m.get("y", 0),
+            "scale": m.get("scale", 1),
+            "transform": m.get("transform", 0),
+            "reserved": m.get("reserved", [0, 0, 0, 0]),
             "refresh": round(m.get("refreshRate", 0), 2),
             "active_workspace": m.get("activeWorkspace", {}).get("name"),
             "focused": m.get("focused", False),

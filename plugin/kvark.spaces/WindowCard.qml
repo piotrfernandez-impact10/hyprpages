@@ -27,7 +27,10 @@ Rectangle {
   readonly property string kind: entry.kind || "window"
   readonly property var detail: entry.detail || ({})
 
-  height: content.implicitHeight + pad * 2
+  // Size and position are set by the canvas from the window's real geometry,
+  // so the card must not size itself. Content is clipped instead: a small
+  // window gets a small box, exactly as on screen.
+  clip: true
   radius: radiusPx
   color: dragArea.drag.active ? Qt.lighter(surface, 1.4) : surface
   border.width: 1
@@ -45,6 +48,12 @@ Rectangle {
     })
   }
 
+  // Where the canvas says this window lives. Dragging breaks the x/y bindings,
+  // so the card is put back here on release rather than left mid-air claiming
+  // a position the window does not have.
+  property real homeX: 0
+  property real homeY: 0
+
   MouseArea {
     id: dragArea
     anchors.fill: parent
@@ -52,10 +61,8 @@ Rectangle {
     cursorShape: Qt.OpenHandCursor
     onReleased: {
       if (card.Drag.target) card.Drag.drop()
-      // Snap home either way: the column re-renders from state after Apply,
-      // so a card left mid-air would be lying about where the window is.
-      card.x = 0
-      card.y = 0
+      card.x = card.homeX
+      card.y = card.homeY
     }
   }
 
@@ -97,7 +104,7 @@ Rectangle {
 
     // Terminals: the directory, and the command actually running there.
     Text {
-      visible: card.kind === "terminal" && !!card.detail.cwd
+      visible: card.height > 64 && card.kind === "terminal" && !!card.detail.cwd
       Layout.fillWidth: true
       text: card.detail.cwd || ""
       color: card.foreground
@@ -108,7 +115,7 @@ Rectangle {
     }
 
     Text {
-      visible: card.kind === "terminal" && !!card.detail.command
+      visible: card.height > 46 && card.kind === "terminal" && !!card.detail.command
       Layout.fillWidth: true
       text: card.detail.command || ""
       color: card.foreground
@@ -121,7 +128,7 @@ Rectangle {
     // Browsers: a tab count, expanded on hover rather than always listed --
     // a dozen tab titles per card would bury the layout the editor is for.
     Text {
-      visible: card.kind === "browser"
+      visible: card.height > 46 && card.kind === "browser"
       Layout.fillWidth: true
       text: {
         if (!card.detail.tabs) return "tabs unavailable"

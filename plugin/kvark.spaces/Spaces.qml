@@ -95,6 +95,34 @@ Item {
     })
   }
 
+  // Everything on this page, wherever it physically is. The canvas draws each
+  // window on the monitor it actually occupies, not the one a rule pins it to.
+  function windowsOnPage(page) {
+    return root.windows.filter(function (w) { return w.page === page })
+  }
+
+  function monitorByName(name) {
+    for (var i = 0; i < root.monitors.length; i++)
+      if (root.monitors[i].name === name) return root.monitors[i]
+    return null
+  }
+
+  // Bounding box of the whole desktop in compositor coordinates. The canvas is
+  // this box scaled down, so the miniature keeps each screen's real proportions
+  // and their real relative placement.
+  function desktopBounds() {
+    if (!root.monitors.length) return { x: 0, y: 0, width: 1, height: 1 }
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (var i = 0; i < root.monitors.length; i++) {
+      var m = root.monitors[i]
+      minX = Math.min(minX, m.x)
+      minY = Math.min(minY, m.y)
+      maxX = Math.max(maxX, m.x + m.width)
+      maxY = Math.max(maxY, m.y + m.height)
+    }
+    return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) }
+  }
+
   function appsAt(page, monitor) {
     return (root.config.apps || []).filter(function (a) {
       return a.page === page && a.monitor === monitor
@@ -320,73 +348,109 @@ Item {
             Item { Layout.fillWidth: true }
           }
 
-          // One column per monitor -----------------------------------------
-          RowLayout {
+          // Scale miniature of the desktop ---------------------------------
+          //
+          // Not a list of columns: each monitor keeps its true aspect ratio and
+          // its real position relative to the others, and every window is drawn
+          // where it actually sits. One uniform scale factor for both axes, so
+          // nothing is stretched.
+          Item {
+            id: canvas
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: Style.spacing.md
+
+            readonly property var bounds: root.desktopBounds()
+            readonly property real fit: Math.min(width / bounds.width, height / bounds.height)
+            // Centred, so an asymmetric desk does not hug one edge.
+            readonly property real offsetX: (width - bounds.width * fit) / 2
+            readonly property real offsetY: (height - bounds.height * fit) / 2
+
+            function px(worldX) { return canvas.offsetX + (worldX - canvas.bounds.x) * canvas.fit }
+            function py(worldY) { return canvas.offsetY + (worldY - canvas.bounds.y) * canvas.fit }
 
             Repeater {
-              model: root.monitorNames()
+              model: root.monitors
 
               Rectangle {
-                id: column
-                required property string modelData
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                id: screen
+                required property var modelData
+
+                x: canvas.px(screen.modelData.x)
+                y: canvas.py(screen.modelData.y)
+                width: screen.modelData.width * canvas.fit
+                height: screen.modelData.height * canvas.fit
+
                 radius: Style.cornerRadius / 2
-                color: dropTarget.containsDrag ? root.selectedBackground : "transparent"
+                color: screenDrop.containsDrag ? root.selectedBackground : "transparent"
                 border.width: 1
                 border.color: root.border
 
                 DropArea {
-                  id: dropTarget
+                  id: screenDrop
                   anchors.fill: parent
                   onDropped: function (drop) {
                     var payload = JSON.parse(drop.text)
-                    root.place(payload.cls, root.currentPage, column.modelData,
+                    root.place(payload.cls, root.currentPage, screen.modelData.name,
                                payload.floating, payload.size)
                     drop.accept()
                   }
                 }
 
-                ColumnLayout {
-                  anchors.fill: parent
-                  anchors.margins: Style.spacing.sm
-                  spacing: Style.spacing.sm
-
-                  Text {
-                    text: root.monitorLabel(column.modelData)
-                    color: root.foreground
-                    opacity: 0.7
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
-                    font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.small
-                  }
-
-                  ListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: Style.spacing.sm
-                    model: root.windowsAt(root.currentPage, column.modelData)
-
-                    delegate: WindowCard {
-                      required property var modelData
-                      width: ListView.view.width
-                      entry: modelData
-                      foreground: root.foreground
-                      surface: root.background
-                      outline: root.border
-                      pad: Style.spacing.sm
-                      radiusPx: Style.cornerRadius / 2
-                      fontFamily: Style.font.menuFamily
-                      fontBody: Style.font.body
-                      fontSmall: Style.font.small
-                    }
-                  }
+                // The bar's reserved strip, drawn so the miniature matches what
+                // the eye sees rather than the raw output rectangle.
+                Rectangle {
+                  x: 0
+                  y: 0
+                  width: parent.width
+                  height: (screen.modelData.reserved && screen.modelData.reserved.length > 1
+                           ? screen.modelData.reserved[1] : 0) * canvas.fit
+                  color: root.foreground
+                  opacity: 0.08
                 }
+
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.bottom: parent.bottom
+                  anchors.bottomMargin: 2
+                  text: screen.modelData.name + "  " + screen.modelData.width + "x" + screen.modelData.height
+                  color: root.foreground
+                  opacity: 0.35
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.small
+                }
+              }
+            }
+
+            // Windows sit above the screens so they can be dragged between them.
+            Repeater {
+              model: root.windowsOnPage(root.currentPage)
+
+              WindowCard {
+                id: tile
+                required property var modelData
+
+                readonly property var screenOf: root.monitorByName(tile.modelData.onMonitor)
+                readonly property bool placeable: !!tile.screenOf
+                          && tile.modelData.at && tile.modelData.at.length === 2
+                          && tile.modelData.size && tile.modelData.size.length === 2
+
+                visible: tile.placeable
+                homeX: tile.placeable ? canvas.px(tile.modelData.at[0]) : 0
+                homeY: tile.placeable ? canvas.py(tile.modelData.at[1]) : 0
+                x: tile.homeX
+                y: tile.homeY
+                width: tile.placeable ? tile.modelData.size[0] * canvas.fit : 0
+                height: tile.placeable ? tile.modelData.size[1] * canvas.fit : 0
+
+                entry: tile.modelData
+                foreground: root.foreground
+                surface: root.background
+                outline: root.border
+                pad: Style.spacing.sm
+                radiusPx: Style.cornerRadius / 2
+                fontFamily: Style.font.menuFamily
+                fontBody: Style.font.body
+                fontSmall: Style.font.small
               }
             }
           }

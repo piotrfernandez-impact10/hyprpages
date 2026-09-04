@@ -61,9 +61,16 @@ def build_state() -> dict:
     kitty_cache = capture.kitty_windows()
     tabs = capture.browser_tabs()
 
+    by_id = {m["id"]: m for m in monitors}
+
     windows = []
     for client in hypr.query("clients") or []:
         described = capture.describe(client, kitty_cache, tabs)
+        # The monitor a window is on right now, which is not necessarily the
+        # one its page pins it to - the editor draws the former and edits the
+        # latter.
+        on = by_id.get(described.pop("monitorId", -1))
+        described["onMonitor"] = on["name"] if on else ""
         workspace = described["workspace"]
         placement = cfg.page_of(int(workspace)) if workspace.isdigit() else None
         described["page"] = placement[0] if placement else None
