@@ -84,6 +84,8 @@ Item {
     applyProcess.running = false
     appsProcess.running = false
     launchProcess.running = false
+    closeProcess.running = false
+    root.confirmEntry = null
     refreshAfterLaunch.stop()
     root.closePicker()
     canvas_snapReset()
@@ -324,13 +326,34 @@ Item {
   property int pickerIndex: 0
   property var apps: []
 
-  function addTo(page, monitor) {
+  // `near` is a window address: the new app opens beside that window rather
+  // than wherever the layout would otherwise drop it.
+  property string pickerNear: ""
+
+  function addTo(page, monitor, near) {
     if (!monitor) return
+    root.pickerNear = near || ""
     root.pickerMonitor = monitor
     root.pickerFilter = ""
     root.pickerIndex = 0
     root.pickerOpen = true
     if (!root.apps.length) appsProcess.running = true
+  }
+
+  // Closing a window can lose work, so it asks first. Every other action here
+  // is reversible by dragging something back; this one is not.
+  property var confirmEntry: null
+
+  function askClose(entry) {
+    root.confirmEntry = entry
+  }
+
+  function confirmClose() {
+    var entry = root.confirmEntry
+    root.confirmEntry = null
+    if (!entry || !entry.address) return
+    closeProcess.command = [root.cli, "close", entry.address]
+    closeProcess.running = true
   }
 
   function closePicker() {
@@ -350,9 +373,11 @@ Item {
     var list = root.filteredApps()
     if (!list.length) return
     var app = list[Math.max(0, Math.min(root.pickerIndex, list.length - 1))]
-    launchProcess.command = [root.cli, "launch", app.id,
-                             "--page", String(root.currentPage),
-                             "--monitor", root.pickerMonitor]
+    var args = [root.cli, "launch", app.id,
+                "--page", String(root.currentPage),
+                "--monitor", root.pickerMonitor]
+    if (root.pickerNear) args = args.concat(["--near", root.pickerNear])
+    launchProcess.command = args
     launchProcess.running = true
     root.closePicker()
   }
@@ -430,6 +455,20 @@ Item {
         } catch (e) {
           root.error = "could not read the application list"
         }
+      }
+    }
+  }
+
+  Process {
+    id: closeProcess
+    stdout: StdioCollector {
+      // The window takes a moment to go; look again once it has.
+      onStreamFinished: refreshAfterLaunch.start()
+    }
+    stderr: StdioCollector {
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.error = message
       }
     }
   }
@@ -549,6 +588,18 @@ Item {
         focus: true
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function (event) {
+          // The confirmation is modal: it answers first, so Escape cancels the
+          // close rather than shutting the whole editor.
+          if (root.confirmEntry !== null) {
+            if (event.key === Qt.Key_Escape) {
+              root.confirmEntry = null
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              root.confirmClose()
+            }
+            event.accepted = true
+            return
+          }
+
           // While the picker is open it takes the keyboard: typing filters,
           // Escape backs out of the picker rather than the whole editor.
           if (root.pickerOpen) {
@@ -961,6 +1012,9 @@ Item {
                 iconSource: tile.modelData.icon
                   ? Quickshell.iconPath(tile.modelData.icon, true) : ""
                 onContextRequested: function (gx, gy) { root.openMenu(tile.modelData, gx, gy) }
+                onAddRequested: root.addTo(root.currentPage, tile.modelData.onMonitor,
+                                           tile.modelData.address)
+                onCloseRequested: root.askClose(tile.modelData)
 
                 // Live preview while dragging, and the drop itself on release.
                 onXChanged: if (tile.dragging) canvas.updateSnap(tile)
@@ -1024,7 +1078,7 @@ Item {
 
                 MouseArea {
                   anchors.fill: parent
-                  onClicked: root.addTo(root.currentPage, addButton.modelData.name)
+                  onClicked: root.addTo(root.currentPage, addButton.modelData.name, "")
                 }
               }
             }
@@ -1065,6 +1119,111 @@ Item {
             color: root.mutedText
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.caption
+          }
+        }
+      }
+    }
+
+    // Close confirmation. Above everything, because it is the one action here
+    // that cannot be undone by dragging something back.
+    MouseArea {
+      anchors.fill: parent
+      visible: root.confirmEntry !== null
+      enabled: root.confirmEntry !== null
+      onClicked: root.confirmEntry = null
+      z: 300
+    }
+
+    BorderSurface {
+      id: confirmDialog
+      visible: root.confirmEntry !== null
+      z: 301
+
+      anchors.centerIn: parent
+      width: Style.space(320)
+      height: confirmColumn.implicitHeight + Style.spacing.panelPadding * 2
+      color: root.background
+      radius: root.cornerRadius
+      borderSpec: root.borderSpec
+
+      MouseArea { anchors.fill: parent; onClicked: {} }
+
+      ColumnLayout {
+        id: confirmColumn
+        anchors.fill: parent
+        anchors.margins: Style.spacing.panelPadding
+        spacing: Style.spacing.sm
+
+        Text {
+          Layout.fillWidth: true
+          text: "Close " + ((root.confirmEntry && root.confirmEntry.class) || "this window") + "?"
+          color: root.foreground
+          wrapMode: Text.WordWrap
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.subtitle
+          font.bold: true
+        }
+
+        Text {
+          Layout.fillWidth: true
+          // Said plainly: this asks the application to close, so anything with
+          // unsaved work will put its own dialog up rather than lose it.
+          text: "The application is asked to close, so it can still prompt you "
+                + "about unsaved work."
+          color: root.mutedText
+          wrapMode: Text.WordWrap
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          Layout.topMargin: Style.spacing.sm
+          spacing: Style.spacing.sm
+
+          Item { Layout.fillWidth: true }
+
+          Repeater {
+            model: [
+              { label: "Cancel", danger: false },
+              { label: "Close it", danger: true }
+            ]
+
+            Rectangle {
+              id: confirmButton
+              required property var modelData
+
+              Layout.preferredWidth: Style.space(96)
+              Layout.preferredHeight: Style.space(28)
+              radius: Style.cornerRadius / 2
+              color: confirmHover.hovered
+                ? (confirmButton.modelData.danger ? Color.urgent : root.selectedBackground)
+                : "transparent"
+              border.width: 1
+              border.color: confirmButton.modelData.danger
+                ? Color.urgent
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.3)
+
+              Behavior on color { ColorAnimation { duration: 90 } }
+              HoverHandler { id: confirmHover }
+
+              Text {
+                anchors.centerIn: parent
+                text: confirmButton.modelData.label
+                color: confirmHover.hovered && confirmButton.modelData.danger
+                  ? root.background : root.foreground
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                  if (confirmButton.modelData.danger) root.confirmClose()
+                  else root.confirmEntry = null
+                }
+              }
+            }
           }
         }
       }

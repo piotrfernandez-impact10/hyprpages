@@ -173,6 +173,21 @@ class TestMove:
         assert moved == []
 
 
+class TestClose:
+    def test_refuses_an_address_no_window_has(self, monkeypatch, capsys):
+        """Dispatching blind at an address would be a silent no-op at best."""
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: [{"address": "0xAAA"}])
+        assert cli.main(["close", "0xZZZ"]) == 1
+        assert "no window with address" in capsys.readouterr().err
+
+    def test_asks_the_known_window_to_close(self, monkeypatch):
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: [{"address": "0xAAA"}])
+        closed = []
+        monkeypatch.setattr(cli.hypr, "close_window", closed.append)
+        assert cli.main(["close", "0xAAA"]) == 0
+        assert closed == ["0xAAA"]
+
+
 class TestNotLoadedWarning:
     def test_quiet_once_the_lua_config_requires_it(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))

@@ -212,6 +212,22 @@ def cmd_page(args) -> int:
     return 0
 
 
+def cmd_close(args) -> int:
+    """Close one window.
+
+    A request rather than a kill, so an application with unsaved work can put
+    its own dialog up instead of losing it.
+    """
+    known = any(client.get("address") == args.address for client in (hypr.query("clients") or []))
+    if not known:
+        print(f"no window with address {args.address}", file=sys.stderr)
+        return 1
+
+    hypr.close_window(args.address)
+    print(f"asked {args.address} to close")
+    return 0
+
+
 def cmd_apps(_args) -> int:
     """The launchable applications, for the editor's picker."""
     json.dump(desktop.applications(), sys.stdout)
@@ -236,7 +252,12 @@ def cmd_launch(args) -> int:
         print(f"no workspace for page {args.page} on {args.monitor}", file=sys.stderr)
         return 1
 
-    hypr.focus_workspace(args.monitor, workspace)
+    if args.near:
+        # Focus the window the user pointed at, so the new one tiles beside it
+        # rather than wherever the layout would otherwise have put it.
+        hypr.focus_window(args.near)
+    else:
+        hypr.focus_workspace(args.monitor, workspace)
     entry = args.desktop_id.removesuffix(".desktop")
 
     launcher = _launch_command(entry)
@@ -374,7 +395,16 @@ def main(argv: list[str] | None = None) -> int:
     launch_parser.add_argument("desktop_id", help="desktop entry id, e.g. spotify.desktop")
     launch_parser.add_argument("--page", type=int, required=True)
     launch_parser.add_argument("--monitor", required=True)
+    launch_parser.add_argument(
+        "--near",
+        default="",
+        help="focus this window first (0x...), so the new one opens beside it",
+    )
     launch_parser.set_defaults(func=cmd_launch)
+
+    close_parser = sub.add_parser("close", help="ask one window to close")
+    close_parser.add_argument("address", help="window address, e.g. 0x55...")
+    close_parser.set_defaults(func=cmd_close)
 
     page_parser = sub.add_parser("page", help="switch every screen to one page")
     page_parser.add_argument("page", type=int)

@@ -145,6 +145,19 @@ def focus_monitor(monitor: str) -> None:
     _hyprctl("dispatch", f"hl.dsp.focus({{ monitor = '{monitor}' }})")
 
 
+def focus_window(address: str) -> None:
+    _hyprctl("dispatch", f"hl.dsp.focus({{ window = 'address:{address}' }})")
+
+
+def close_window(address: str) -> None:
+    """Ask a window to close, the same as the compositor's own close binding.
+
+    This is a request, not a kill: an application with unsaved work gets to put
+    its dialog up rather than losing it.
+    """
+    _hyprctl("dispatch", f"hl.dsp.window.close({{ window = 'address:{address}' }})")
+
+
 def reload() -> None:
     _hyprctl("reload")
 

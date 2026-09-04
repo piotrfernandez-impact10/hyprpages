@@ -41,6 +41,8 @@ Rectangle {
 
   signal contextRequested(real globalX, real globalY)
   signal dragFinished()
+  signal addRequested()
+  signal closeRequested()
 
   // True while the left button is dragging this tile. The canvas watches it to
   // draw the snap preview.
@@ -93,6 +95,60 @@ Rectangle {
       card.dragFinished()
       card.x = card.homeX
       card.y = card.homeY
+    }
+  }
+
+  // Per-window controls. Revealed on hover so a page of windows is a picture
+  // of the layout at rest, not a grid of buttons. Above the drag area, and
+  // each takes its own press, so neither starts a drag.
+  Row {
+    id: controls
+    visible: hoverArea.hovered && !card.dragging && card.width > 60 && card.height > 40
+    anchors.top: parent.top
+    anchors.right: parent.right
+    anchors.margins: Math.max(2, card.pad / 2)
+    spacing: Math.max(2, card.pad / 2)
+    z: 5
+
+    Repeater {
+      model: [
+        { glyph: "+", tip: "open an app beside this one", action: "add" },
+        { glyph: "−", tip: "close this window", action: "close" }
+      ]
+
+      Rectangle {
+        id: control
+        required property var modelData
+
+        width: Math.max(16, Math.min(22, card.width * 0.12))
+        height: width
+        radius: width / 2
+        color: buttonHover.hovered
+          ? (control.modelData.action === "close" ? "#a55555" : card.foreground)
+          : Qt.rgba(0, 0, 0, 0.55)
+        border.width: 1
+        border.color: card.outline
+
+        Behavior on color { ColorAnimation { duration: 90 } }
+        HoverHandler { id: buttonHover }
+
+        Text {
+          anchors.centerIn: parent
+          text: control.modelData.glyph
+          color: buttonHover.hovered ? card.surface : card.foreground
+          font.family: card.fontFamily
+          font.pixelSize: control.width * 0.6
+          font.bold: true
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          onClicked: {
+            if (control.modelData.action === "add") card.addRequested()
+            else card.closeRequested()
+          }
+        }
+      }
     }
   }
 
