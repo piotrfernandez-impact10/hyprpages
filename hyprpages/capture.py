@@ -212,6 +212,10 @@ def describe(window: dict, kitty_cache: dict[str, dict], tabs: list | None) -> d
         # Identifies this window rather than its class, so a drag can move the
         # one window the user dragged.
         "address": window.get("address", ""),
+        # Used only to pair a window with its Wayland toplevel for live
+        # previews, and to tell two windows of one app apart. Never written to
+        # the configuration, which stores class patterns and nothing else.
+        "title": window.get("title", ""),
         "icon": desktop.icon_for(cls, comm),
         "kind": kind,
         "workspace": window.get("workspace", {}).get("name", ""),

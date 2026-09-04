@@ -6,6 +6,7 @@
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Wayland._Screencopy
 
 Rectangle {
   id: card
@@ -24,6 +25,12 @@ Rectangle {
   property string iconSource: ""
   // Its windows are set to stay on one workspace together.
   property bool grouped: false
+  // Live view: the window's own content instead of its icon. `toplevel` is the
+  // Wayland handle the capture reads from, matched by the parent; null when no
+  // unambiguous match was found, in which case the icon stands in.
+  property bool liveView: false
+  property var toplevel: null
+  readonly property bool showingLive: liveView && toplevel !== null
   property color foreground: "white"
   property color surface: "black"
   property color outline: "gray"
@@ -175,6 +182,46 @@ Rectangle {
     }
   }
 
+  // The window's own content, filling the tile. Behind the controls and the
+  // caption, and inset so the screen outline and this card's border stay
+  // visible - a preview that reaches the edge looks like a hole in the page.
+  ScreencopyView {
+    id: livePreview
+    visible: card.showingLive
+    anchors.fill: parent
+    anchors.margins: 2
+    captureSource: card.showingLive ? card.toplevel : null
+    live: true
+    paintCursor: false
+    z: 1
+  }
+
+  // A caption over the live view, so a preview is still identifiable when the
+  // content itself is ambiguous - two empty terminals, say.
+  Rectangle {
+    visible: card.showingLive && card.showName
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    anchors.margins: 2
+    height: caption.implicitHeight + 6
+    color: Qt.rgba(0, 0, 0, 0.6)
+    z: 2
+
+    Text {
+      id: caption
+      anchors.centerIn: parent
+      width: parent.width - 8
+      text: card.entry.class || "?"
+      color: card.foreground
+      elide: Text.ElideRight
+      horizontalAlignment: Text.AlignHCenter
+      font.family: card.fontFamily
+      font.pixelSize: card.fontSmall
+      font.bold: true
+    }
+  }
+
   // Centred as a block: icon, then the name directly beneath it, then whatever
   // detail the tile is tall enough to carry.
   // Enough inset that a long path elides before it reaches the border rather
@@ -183,14 +230,16 @@ Rectangle {
 
   ColumnLayout {
     id: content
+    visible: !card.showingLive
     anchors.centerIn: parent
     width: Math.max(20, parent.width - card.textInset * 2)
     spacing: Math.max(2, card.pad / 2)
 
     Item {
+      visible: !card.showingLive
       Layout.alignment: Qt.AlignHCenter
-      Layout.preferredWidth: card.iconSize
-      Layout.preferredHeight: card.iconSize
+      Layout.preferredWidth: card.showingLive ? 0 : card.iconSize
+      Layout.preferredHeight: card.showingLive ? 0 : card.iconSize
 
       Image {
         anchors.fill: parent

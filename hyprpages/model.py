@@ -84,6 +84,7 @@ class PagesConfig:
     monitors: list[str] = field(default_factory=list)
     apps: list[App] = field(default_factory=list)
     pair_monitors: bool = True  # emit the workspace.active hook
+    live_view: bool = False  # editor preference; never reaches the generated config
 
     # ------------------------------------------------------------------ maths
 

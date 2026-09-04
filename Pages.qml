@@ -8,6 +8,7 @@
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Wayland._ToplevelManagement
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -209,6 +210,39 @@ Item {
       }
     }
     return best
+  }
+
+  // Pair a window with the Wayland toplevel that represents it.
+  //
+  // The two come from different protocols: windows from hyprctl, which knows
+  // addresses, and toplevels from wlr-foreign-toplevel-management, which does
+  // not. So they are matched on what both expose - the app id against the
+  // class, and the title to tell two windows of one app apart, which is
+  // exactly the case of four terminals side by side.
+  function toplevelFor(entry) {
+    if (!entry || !entry.class) return null
+    var list = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
+    var sameApp = []
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i]
+      if (!t) continue
+      if (String(t.appId || "") === String(entry.class)) sameApp.push(t)
+    }
+    if (!sameApp.length) return null
+    if (sameApp.length === 1) return sameApp[0]
+    for (var j = 0; j < sameApp.length; j++) {
+      if (String(sameApp[j].title || "") === String(entry.title || "")) return sameApp[j]
+    }
+    // Ambiguous: showing the wrong window's content would be worse than
+    // showing none, so fall back to the icon.
+    return null
+  }
+
+  function toggleLiveView() {
+    root.config = Object.assign({}, root.config, {
+      live_view: !root.config.live_view
+    })
+    root.dirty = true
   }
 
   function monitorByName(name) {
@@ -691,6 +725,9 @@ Item {
           } else if (event.key === Qt.Key_L) {
             root.togglePairing()
             event.accepted = true
+          } else if (event.key === Qt.Key_V) {
+            root.toggleLiveView()
+            event.accepted = true
           }
         }
 
@@ -783,6 +820,35 @@ Item {
               MouseArea {
                 anchors.fill: parent
                 onClicked: root.togglePairing()
+              }
+            }
+
+            // Live view: real window content instead of icons.
+            Rectangle {
+              Layout.preferredWidth: liveLabel.implicitWidth + Style.spacing.md * 2
+              Layout.preferredHeight: Style.space(22)
+              radius: Style.cornerRadius / 2
+              color: liveHover.hovered ? Qt.lighter(root.background, 1.3) : "transparent"
+              border.width: 1
+              border.color: root.config.live_view
+                ? root.selectedText
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.25)
+
+              Behavior on color { ColorAnimation { duration: 90 } }
+              HoverHandler { id: liveHover }
+
+              Text {
+                id: liveLabel
+                anchors.centerIn: parent
+                text: "live view"
+                color: root.config.live_view ? root.selectedText : root.mutedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: root.toggleLiveView()
               }
             }
 
@@ -1080,6 +1146,9 @@ Item {
                 }
                 iconSource: tile.modelData.icon
                   ? Quickshell.iconPath(tile.modelData.icon, true) : ""
+                liveView: root.config.live_view === true
+                toplevel: root.config.live_view === true
+                  ? root.toplevelFor(tile.modelData) : null
                 onContextRequested: function (gx, gy) { root.openMenu(tile.modelData, gx, gy) }
                 onAddRequested: root.addTo(root.currentPage, tile.modelData.onMonitor,
                                            tile.modelData.address)
@@ -1184,7 +1253,8 @@ Item {
           Text {
             Layout.fillWidth: true
             text: "+ adds an app here   ·   drag a window between screens   ·   right-click for options   "
-                  + "·   1-0 page   ·   L link screens   ·   R refresh   ·   Enter apply   ·   Esc close"
+                  + "·   1-0 page   ·   L link screens   ·   V live view   ·   R refresh   "
+                  + "·   Enter apply   ·   Esc close"
             color: root.mutedText
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.caption
