@@ -115,7 +115,15 @@ def cmd_capture(_args) -> int:
 
 
 def cmd_apply(args) -> int:
-    cfg = SpacesConfig.load()
+    if args.stdin:
+        # The editor hands back the whole configuration in one call rather
+        # than a flag per change, so an edit session is atomic: either the new
+        # layout is saved and applied, or nothing is touched.
+        cfg = SpacesConfig.from_dict(json.load(sys.stdin))
+        cfg.save()
+    else:
+        cfg = SpacesConfig.load()
+
     lua = cfg.to_lua()
     if args.dry_run:
         print(lua)
@@ -149,6 +157,11 @@ def main(argv: list[str] | None = None) -> int:
     apply_parser = sub.add_parser("apply", help="write spaces.lua and reload Hyprland")
     apply_parser.add_argument(
         "--dry-run", action="store_true", help="print the Lua instead of writing it"
+    )
+    apply_parser.add_argument(
+        "--stdin",
+        action="store_true",
+        help="read the configuration as JSON on stdin and save it before applying",
     )
     apply_parser.set_defaults(func=cmd_apply)
 

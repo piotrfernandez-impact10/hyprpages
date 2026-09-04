@@ -85,13 +85,26 @@ class SpacesConfig:
     # ------------------------------------------------------------- persistence
 
     @classmethod
+    def from_dict(cls, raw: dict) -> SpacesConfig:
+        """Build from untrusted JSON, ignoring keys we do not know.
+
+        The editor is the only caller today, but tolerating unknown keys means
+        an older binary will not crash on a config written by a newer one.
+        """
+        known = {f for f in cls.__dataclass_fields__ if f != "apps"}
+        fields = {k: v for k, v in raw.items() if k in known}
+        app_fields = set(App.__dataclass_fields__)
+        apps = [
+            App(**{k: v for k, v in app.items() if k in app_fields}) for app in raw.get("apps", [])
+        ]
+        return cls(apps=apps, **fields)
+
+    @classmethod
     def load(cls) -> SpacesConfig:
         path = state_path()
         if not path.exists():
             return cls()
-        raw = json.loads(path.read_text())
-        apps = [App(**a) for a in raw.pop("apps", [])]
-        return cls(apps=apps, **raw)
+        return cls.from_dict(json.loads(path.read_text()))
 
     def save(self) -> None:
         path = state_path()
