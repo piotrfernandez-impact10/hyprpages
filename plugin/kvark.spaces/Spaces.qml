@@ -45,8 +45,7 @@ Item {
   // a window is a surface resting inside it. Derived from the theme's own
   // colours so this follows whatever theme is active.
   readonly property color screenWell: Qt.darker(root.background, 1.45)
-  readonly property color screenEdge: Qt.rgba(root.foreground.r, root.foreground.g,
-                                              root.foreground.b, 0.22)
+  readonly property color screenEdge: Qt.lighter(root.foreground, 1.6)
   readonly property color windowFill: Qt.lighter(root.background, 1.55)
   readonly property color windowEdge: Qt.rgba(root.foreground.r, root.foreground.g,
                                               root.foreground.b, 0.35)
@@ -510,7 +509,9 @@ Item {
                      : chipHover.hovered ? Qt.lighter(root.background, 1.3)
                      : "transparent"
                 border.width: 1
-                border.color: pageChip.current ? root.selectedText : root.screenEdge
+                border.color: pageChip.current
+                  ? root.selectedText
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.25)
 
                 Behavior on color { ColorAnimation { duration: 90 } }
                 HoverHandler { id: chipHover }
@@ -636,7 +637,7 @@ Item {
                   radius: Style.cornerRadius / 2
                   color: screen.targeted
                     ? Qt.lighter(root.screenWell, 1.5) : root.screenWell
-                  border.width: screen.targeted ? 2 : 1
+                  border.width: 2
                   border.color: screen.targeted ? root.selectedText : root.screenEdge
 
                   Behavior on color { ColorAnimation { duration: 90 } }
