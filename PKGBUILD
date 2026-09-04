@@ -28,5 +28,5 @@ package() {
 
   # The Quickshell editor plugin, for Omarchy-based setups.
   install -d "$pkgdir/usr/share/$pkgname/plugin"
-  cp -r plugin/kvark.hyprpages "$pkgdir/usr/share/$pkgname/plugin/"
+  cp -r . "$pkgdir/usr/share/$pkgname/plugin/"
 }

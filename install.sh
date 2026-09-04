@@ -30,7 +30,11 @@ if [[ -d "$config/omarchy/plugins" ]] || command -v omarchy >/dev/null; then
   # Copied, not symlinked: omarchy-plugin-validate rejects symlinks anywhere
   # inside a plugin folder. Re-run this script after pulling.
   rm -rf "$plugins/kvark.hyprpages"
-  cp -r "$repo/plugin/kvark.hyprpages" "$plugins/kvark.hyprpages"
+  # git archive rather than cp: the working tree carries a .venv full of
+  # symlinks, and omarchy-plugin-validate rejects a symlink anywhere inside a
+  # plugin folder.
+  mkdir -p "$plugins/kvark.hyprpages"
+  git -C "$repo" archive HEAD | tar -x -C "$plugins/kvark.hyprpages"
   echo "installed the Omarchy shell plugin"
   echo
   echo "Enable it and put its button on the bar:"

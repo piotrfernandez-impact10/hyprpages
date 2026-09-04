@@ -48,15 +48,26 @@ control socket), a Chromium-family browser started with
 
 ## Install
 
+On Omarchy, as a shell plugin — this is the whole thing, editor included:
+
 ```bash
-git clone https://github.com/<owner>/hyprpages
-cd hyprpages
-./install.sh
+omarchy plugin add https://github.com/piotrfernandez-impact10/hyprpages --enable
 ```
 
-That symlinks `hyprpages` into `~/.local/bin`. There is deliberately no
-`pip install`: the tool has no dependencies, and `pip install --user` fails
-outright on distributions that mark Python as externally managed (PEP 668).
+The repository *is* the plugin: `manifest.json` sits at its root and the CLI
+ships inside it, so there is nothing else to install and nothing to put on
+`PATH`.
+
+From a clone, which also puts `hyprpages` on your `PATH` for terminal use:
+
+```bash
+git clone https://github.com/piotrfernandez-impact10/hyprpages
+cd hyprpages && ./install.sh
+```
+
+There is deliberately no `pip install`: the tool has no dependencies, and
+`pip install --user` fails outright on distributions that mark Python as
+externally managed (PEP 668).
 
 ## Use
 
@@ -137,7 +148,7 @@ a broken overlay can leave an orphaned layer surface behind:
 
 ```bash
 mkdir -p /tmp/qmlimports && ln -sfn /usr/share/omarchy/shell /tmp/qmlimports/qs
-qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml plugin/kvark.hyprpages/*.qml
+qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml *.qml
 ```
 
 ## Licence

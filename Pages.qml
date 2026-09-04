@@ -19,6 +19,16 @@ Item {
   property var shell: null
   property var manifest: null
 
+  // Installed via `omarchy plugin add`, nothing puts the CLI on PATH, so the
+  // copy shipped inside this plugin is used when it is there. A PATH install
+  // still wins for people running from a clone.
+  readonly property string cli: {
+    var bundled = Quickshell.env("HOME")
+      + "/.config/omarchy/plugins/kvark.hyprpages/bin/hyprpages"
+    return root.bundledCliExists ? bundled : "hyprpages"
+  }
+  property bool bundledCliExists: false
+
   property bool opened: false
   property bool busy: false
   property string error: ""
@@ -335,7 +345,7 @@ Item {
     var list = root.filteredApps()
     if (!list.length) return
     var app = list[Math.max(0, Math.min(root.pickerIndex, list.length - 1))]
-    launchProcess.command = ["hyprpages", "launch", app.id,
+    launchProcess.command = [root.cli, "launch", app.id,
                              "--page", String(root.currentPage),
                              "--monitor", root.pickerMonitor]
     launchProcess.running = true
@@ -346,7 +356,7 @@ Item {
   // The rule it also records is what makes the placement stick next time.
   function moveLive(windowClass, page, monitor) {
     if (!root.opened || !windowClass || !monitor) return
-    moveProcess.command = ["hyprpages", "move", windowClass,
+    moveProcess.command = [root.cli, "move", windowClass,
                            "--page", String(page), "--monitor", monitor]
     moveProcess.running = true
   }
@@ -366,7 +376,7 @@ Item {
 
   Process {
     id: stateProcess
-    command: ["hyprpages", "state"]
+    command: [root.cli, "state"]
     stdout: StdioCollector {
       onStreamFinished: {
         root.busy = false
@@ -394,9 +404,16 @@ Item {
     }
   }
 
+  // Checked once at startup rather than guessed: a missing bundled CLI and a
+  // missing PATH one need different advice.
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/plugins/kvark.hyprpages/bin/hyprpages"
+    onLoaded: root.bundledCliExists = true
+  }
+
   Process {
     id: appsProcess
-    command: ["hyprpages", "apps"]
+    command: [root.cli, "apps"]
     stdout: StdioCollector {
       onStreamFinished: {
         try {
@@ -443,7 +460,7 @@ Item {
 
   Process {
     id: applyProcess
-    command: ["hyprpages", "apply", "--stdin"]
+    command: [root.cli, "apply", "--stdin"]
     stdinEnabled: true
     property string payload: ""
     onStarted: {

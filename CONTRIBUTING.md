@@ -24,7 +24,7 @@ Hyprland cannot run in CI and will rot.
 | Path | What it is |
 |---|---|
 | `hyprpages/` | The CLI. All introspection and config writing lives here so it is testable. |
-| `plugin/kvark.hyprpages/` | The QML editor. Pure UI: it shells out to the CLI. |
+| `` | The QML editor. Pure UI: it shells out to the CLI. |
 | `bin/hyprpages` | Entry point, so the repo runs without installation. |
 
 ## Working on the QML
@@ -34,7 +34,7 @@ layer surface that wedges the compositor's screencopy. Lint before loading:
 
 ```bash
 mkdir -p /tmp/qmlimports && ln -sfn /usr/share/omarchy/shell /tmp/qmlimports/qs
-qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml plugin/kvark.hyprpages/*.qml
+qmllint -I /tmp/qmlimports -I /usr/lib/qt6/qml *.qml
 ```
 
 Two traps worth knowing:
