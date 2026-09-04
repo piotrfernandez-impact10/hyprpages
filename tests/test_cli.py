@@ -8,6 +8,8 @@ of it needs a compositor.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from hyprpages import cli
@@ -134,7 +136,7 @@ class TestLaunchCommand:
 
 
 class TestMove:
-    CLIENTS = [
+    CLIENTS: ClassVar[list[dict]] = [
         {"address": "0xAAA", "initialClass": "foot", "workspace": {"name": "1"}},
         {"address": "0xBBB", "initialClass": "foot", "workspace": {"name": "1"}},
         {"address": "0xCCC", "initialClass": "steam", "workspace": {"name": "1"}},

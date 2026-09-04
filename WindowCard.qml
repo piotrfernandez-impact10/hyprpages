@@ -24,6 +24,20 @@ Rectangle {
   property string iconSource: ""
   // Its windows are set to stay on one workspace together.
   property bool grouped: false
+  property color foreground: "white"
+  property color surface: "black"
+  property color outline: "gray"
+
+  readonly property string kind: entry.kind || "window"
+  readonly property var detail: entry.detail || ({})
+
+  // The icon scales with the window it stands for, so a maximised browser
+  // reads at a glance and a small floating player does not shout. Clamped at
+  // both ends: past ~72px it is just a big picture, under ~14px it is mush.
+  readonly property real iconSize: Math.max(14, Math.min(72, Math.min(width, height) * 0.3))
+  // Text only earns its space once the tile is big enough to read it.
+  readonly property bool showName: height > iconSize + card.fontBody + card.pad * 3
+  readonly property bool showDetail: height > iconSize + card.fontBody * 3 + card.pad * 4
 
   signal contextRequested(real globalX, real globalY)
   signal dragFinished()
@@ -31,12 +45,6 @@ Rectangle {
   // True while the left button is dragging this tile. The canvas watches it to
   // draw the snap preview.
   readonly property bool dragging: dragArea.drag.active
-  property color foreground: "white"
-  property color surface: "black"
-  property color outline: "gray"
-
-  readonly property string kind: entry.kind || "window"
-  readonly property var detail: entry.detail || ({})
 
   // Size and position are set by the canvas from the window's real geometry,
   // so the card must not size itself. Content is clipped instead: a small
@@ -88,101 +96,102 @@ Rectangle {
     }
   }
 
+  // Centred as a block: icon, then the name directly beneath it, then whatever
+  // detail the tile is tall enough to carry.
   ColumnLayout {
     id: content
-    anchors.fill: parent
-    anchors.margins: card.pad
-    spacing: 2
+    anchors.centerIn: parent
+    width: parent.width - card.pad * 2
+    spacing: Math.max(2, card.pad / 2)
 
-    RowLayout {
-      Layout.fillWidth: true
-      spacing: card.pad
+    Item {
+      Layout.alignment: Qt.AlignHCenter
+      Layout.preferredWidth: card.iconSize
+      Layout.preferredHeight: card.iconSize
 
-      // The application's own icon when one could be resolved, and a shape
-      // standing for the window's kind when it could not.
       Image {
+        anchors.fill: parent
         visible: card.iconSource !== ""
         source: card.iconSource
-        sourceSize.width: card.fontBody + 2
-        sourceSize.height: card.fontBody + 2
-        // Layout.* rather than width/height: the RowLayout owns geometry here.
-        Layout.preferredWidth: card.fontBody + 2
-        Layout.preferredHeight: card.fontBody + 2
+        sourceSize.width: card.iconSize
+        sourceSize.height: card.iconSize
         fillMode: Image.PreserveAspectFit
         smooth: true
         asynchronous: true
       }
 
+      // A shape standing for the window's kind, when no icon could be resolved.
       Text {
+        anchors.centerIn: parent
         visible: card.iconSource === ""
         text: card.kind === "terminal" ? "▸" : card.kind === "browser" ? "●" : "■"
         color: card.foreground
         opacity: 0.6
-        font.pixelSize: card.fontSmall
+        font.pixelSize: card.iconSize * 0.7
       }
+    }
 
-      Text {
-        Layout.fillWidth: true
-        text: card.entry.class || "?"
-        color: card.foreground
-        elide: Text.ElideRight
-        font.family: card.fontFamily
-        font.pixelSize: card.fontBody
-        font.bold: true
-      }
+    Text {
+      visible: card.showName
+      Layout.fillWidth: true
+      text: card.entry.class || "?"
+      color: card.foreground
+      elide: Text.ElideRight
+      horizontalAlignment: Text.AlignHCenter
+      font.family: card.fontFamily
+      font.pixelSize: card.fontBody
+      font.bold: true
+    }
 
-      Text {
-        visible: card.grouped
-        text: "grouped"
-        color: card.foreground
-        opacity: 0.5
-        font.family: card.fontFamily
-        font.pixelSize: card.fontSmall
-      }
-
-      Text {
-        visible: card.entry.floating === true
-        text: "float"
-        color: card.foreground
-        opacity: 0.5
-        font.family: card.fontFamily
-        font.pixelSize: card.fontSmall
-      }
+    // Badges sit under the name so the centred column stays a column.
+    Text {
+      visible: card.showName && (card.grouped || card.entry.floating === true)
+      Layout.fillWidth: true
+      text: [card.grouped ? "grouped" : "", card.entry.floating === true ? "float" : ""]
+        .filter(function (part) { return part !== "" }).join("  ·  ")
+      color: card.foreground
+      opacity: 0.5
+      horizontalAlignment: Text.AlignHCenter
+      font.family: card.fontFamily
+      font.pixelSize: card.fontSmall
     }
 
     // Terminals: the directory, and the command actually running there.
     Text {
-      visible: card.height > 64 && card.kind === "terminal" && !!card.detail.cwd
+      visible: card.showDetail && card.kind === "terminal" && !!card.detail.cwd
       Layout.fillWidth: true
       text: card.detail.cwd || ""
       color: card.foreground
       opacity: 0.5
       elide: Text.ElideLeft
+      horizontalAlignment: Text.AlignHCenter
       font.family: card.fontFamily
       font.pixelSize: card.fontSmall
     }
 
     Text {
-      visible: card.height > 46 && card.kind === "terminal" && !!card.detail.command
+      visible: card.showDetail && card.kind === "terminal" && !!card.detail.command
       Layout.fillWidth: true
       text: card.detail.command || ""
       color: card.foreground
       opacity: 0.75
       elide: Text.ElideRight
+      horizontalAlignment: Text.AlignHCenter
       font.family: card.fontFamily
       font.pixelSize: card.fontSmall
     }
 
-    // Browsers: a tab count, expanded on hover rather than always listed --
-    // a dozen tab titles per card would bury the layout the editor is for.
+    // Browsers: a tab count. A dozen tab titles per card would bury the layout
+    // the editor exists to show.
     Text {
-      visible: card.height > 46 && card.kind === "browser" && !!card.detail.tabs
+      visible: card.showDetail && card.kind === "browser" && !!card.detail.tabs
       Layout.fillWidth: true
       text: card.detail.tabs
         ? card.detail.tabs.length + (card.detail.tabs.length === 1 ? " tab" : " tabs")
         : ""
       color: card.foreground
       opacity: 0.5
+      horizontalAlignment: Text.AlignHCenter
       font.family: card.fontFamily
       font.pixelSize: card.fontSmall
     }
