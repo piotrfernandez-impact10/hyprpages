@@ -74,7 +74,10 @@ class TestLuaGeneration:
 
     def test_app_rule_carries_the_resolved_workspace(self, cfg):
         cfg.apps = [App(pattern="^steam$", page=4, monitor="DP-3", label="steam")]
-        assert 'o.window("^steam$", { workspace = "14 silent" })' in cfg.to_lua()
+        assert (
+            'hl.window_rule({ match = { class = "^steam$" }, workspace = "14 silent" })'
+            in cfg.to_lua()
+        )
 
     def test_floating_app_emits_float_and_size(self, cfg):
         cfg.apps = [App(pattern="^vlc$", page=1, monitor="HDMI-A-1", float=True, size="1280 720")]
@@ -88,6 +91,15 @@ class TestLuaGeneration:
         lua = cfg.to_lua()
         assert "float = true" in lua
         assert "workspace" not in lua.split("-- Window placement.")[1].split("\n")[1]
+
+    def test_uses_only_hyprland_api_not_a_distro_helper(self, cfg):
+        """The generated file must load on any Hyprland, not just one distro:
+        `o.window` is an Omarchy wrapper around hl.window_rule."""
+        cfg.apps = [App(pattern="^x$", page=1, monitor="HDMI-A-1")]
+        lua = cfg.to_lua()
+        assert "o.window(" not in lua
+        assert "o.bind(" not in lua
+        assert "hl.window_rule(" in lua
 
     def test_app_with_nothing_to_say_becomes_a_comment(self, cfg):
         cfg.apps = [App(pattern="^ghost$", page=1, monitor="", float=False)]

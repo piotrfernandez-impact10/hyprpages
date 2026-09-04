@@ -108,6 +108,10 @@ def focus_workspace(monitor: str, workspace: int) -> None:
     _hyprctl("dispatch", f"hl.dsp.focus({{ workspace = '{workspace}' }})")
 
 
+def focus_monitor(monitor: str) -> None:
+    _hyprctl("dispatch", f"hl.dsp.focus({{ monitor = '{monitor}' }})")
+
+
 def reload() -> None:
     _hyprctl("reload")
 

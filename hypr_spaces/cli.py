@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 
-from . import capture, desktop, hypr
+from . import __version__, capture, desktop, hypr
 from .model import App, SpacesConfig, class_to_pattern
 
 
@@ -97,7 +99,10 @@ def cmd_capture(_args) -> int:
     state = build_state()
     cfg = SpacesConfig.load()
     if not cfg.monitors:
-        cfg.monitors = [m["name"] for m in state["monitors"]]
+        # The same inference build_state used. Falling back to physical
+        # left-to-right order here instead would mirror the layout whenever the
+        # desktop pins its first band to the right-hand screen.
+        cfg.monitors = infer_monitor_order(state["monitors"], cfg.offset)
 
     seen: set[str] = set()
     apps: list[App] = []
@@ -173,6 +178,30 @@ def cmd_focus(args) -> int:
     return 0
 
 
+def cmd_page(args) -> int:
+    """Switch every screen to the same page.
+
+    What the Lua config does with a workspace.active hook, expressed as a
+    command so the conf format can bind it to a key. Focus is restored to the
+    screen it started on, so changing page does not move the cursor's screen.
+    """
+    cfg = SpacesConfig.load()
+    monitors = hypr.monitors()
+    if not cfg.monitors:
+        cfg.monitors = infer_monitor_order(monitors, cfg.offset)
+
+    focused = next((m["name"] for m in monitors if m.get("focused")), "")
+
+    for monitor in cfg.monitors:
+        workspace = cfg.workspace_for(args.page, monitor)
+        if workspace is not None:
+            hypr.focus_workspace(monitor, workspace)
+
+    if focused:
+        hypr.focus_monitor(focused)
+    return 0
+
+
 def cmd_apps(_args) -> int:
     """The launchable applications, for the editor's picker."""
     json.dump(desktop.applications(), sys.stdout)
@@ -199,8 +228,14 @@ def cmd_launch(args) -> int:
 
     hypr.focus_workspace(args.monitor, workspace)
     entry = args.desktop_id.removesuffix(".desktop")
+
+    launcher = _launch_command(entry)
+    if launcher is None:
+        print("no way to launch desktop entries: install gtk-launch or gio", file=sys.stderr)
+        return 1
+
     subprocess.Popen(
-        ["uwsm-app", "--", "gtk-launch", entry],
+        launcher,
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -209,7 +244,30 @@ def cmd_launch(args) -> int:
     return 0
 
 
+def _launch_command(entry: str) -> list[str] | None:
+    """How to start a desktop entry on this system.
+
+    uwsm is used when present so the app joins the session scope, as it would
+    if started from the compositor's own launcher, but it is a session manager
+    some setups do not run - so it must not be a hard requirement.
+    """
+    base: list[str] | None = None
+    if shutil.which("gtk-launch"):
+        base = ["gtk-launch", entry]
+    elif shutil.which("gio"):
+        base = ["gio", "launch", f"/usr/share/applications/{entry}.desktop"]
+    if base is None:
+        return None
+    if shutil.which("uwsm-app"):
+        return ["uwsm-app", "--", *base]
+    return base
+
+
 def cmd_apply(args) -> int:
+    from .model import detect_format, output_path
+
+    fmt = args.format or detect_format()
+
     if args.stdin:
         # The editor hands back the whole configuration in one call rather
         # than a flag per change, so an edit session is atomic: either the new
@@ -219,17 +277,22 @@ def cmd_apply(args) -> int:
     else:
         cfg = SpacesConfig.load()
 
-    lua = cfg.to_lua()
+    if not cfg.monitors:
+        # A first run has nothing saved yet; without this, apply would happily
+        # generate a config with no monitors in it and report success.
+        cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
+
+    rendered = cfg.render(fmt)
     if args.dry_run:
-        print(lua)
+        print(rendered)
         return 0
 
-    from .model import output_path
-
-    destination = output_path()
+    destination = output_path(fmt)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(lua)
+    destination.write_text(rendered)
     print(f"wrote {destination}")
+
+    _warn_if_not_loaded(destination, fmt)
 
     hypr.reload()
     errors = hypr.config_errors()
@@ -240,8 +303,41 @@ def cmd_apply(args) -> int:
     return 0
 
 
+def _warn_if_not_loaded(destination: Path, fmt: str) -> None:
+    """Point out that the generated file is not read by anything yet.
+
+    Writing it changes nothing on its own, and silently doing nothing is the
+    single most confusing thing this tool could do.
+    """
+    from .model import config_dir
+
+    if fmt == "lua":
+        entry = config_dir() / "hypr" / "hyprland.lua"
+        needle = instruction = 'require("hypr.spaces")'
+    else:
+        entry = config_dir() / "hypr" / "hyprland.conf"
+        needle = "spaces.conf"
+        instruction = "source = ~/.config/hypr/spaces.conf"
+
+    try:
+        if needle in entry.read_text():
+            return
+    except OSError:
+        pass
+
+    print(
+        f"note: nothing loads {destination} yet.\n      add   {instruction}   to {entry}",
+        file=sys.stderr,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="hypr-spaces")
+    parser = argparse.ArgumentParser(
+        prog="hypr-spaces",
+        description="Visual editor for Hyprland spaces: see what is running, "
+        "arrange it, and generate the config.",
+    )
+    parser.add_argument("--version", action="version", version=f"hypr-spaces {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("state", help="print the current desktop as JSON").set_defaults(func=cmd_state)
@@ -263,6 +359,10 @@ def main(argv: list[str] | None = None) -> int:
     launch_parser.add_argument("--monitor", required=True)
     launch_parser.set_defaults(func=cmd_launch)
 
+    page_parser = sub.add_parser("page", help="switch every screen to one page")
+    page_parser.add_argument("page", type=int)
+    page_parser.set_defaults(func=cmd_page)
+
     focus_parser = sub.add_parser("focus", help="focus a page's workspace on one screen")
     focus_parser.add_argument("--page", type=int, required=True)
     focus_parser.add_argument("--monitor", required=True)
@@ -271,6 +371,11 @@ def main(argv: list[str] | None = None) -> int:
     apply_parser = sub.add_parser("apply", help="write spaces.lua and reload Hyprland")
     apply_parser.add_argument(
         "--dry-run", action="store_true", help="print the Lua instead of writing it"
+    )
+    apply_parser.add_argument(
+        "--format",
+        choices=["lua", "conf"],
+        help="output format (default: lua when hyprland.lua exists, else conf)",
     )
     apply_parser.add_argument(
         "--stdin",
@@ -285,6 +390,11 @@ def main(argv: list[str] | None = None) -> int:
     except hypr.HyprError as exc:
         print(f"hyprctl error: {exc}", file=sys.stderr)
         return 1
+    except FileNotFoundError:
+        print("hyprctl not found - is Hyprland running?", file=sys.stderr)
+        return 1
+    except BrokenPipeError:
+        return 0  # piped into head, and that is not an error
 
 
 if __name__ == "__main__":
