@@ -303,7 +303,7 @@ Item {
               elide: Text.ElideRight
               Layout.maximumWidth: Style.space(420)
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.small
+              font.pixelSize: Style.font.bodySmall
             }
 
             Text {
@@ -311,7 +311,7 @@ Item {
               color: root.foreground
               opacity: 0.6
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.small
+              font.pixelSize: Style.font.bodySmall
             }
           }
 
@@ -337,7 +337,7 @@ Item {
                   text: pageChip.page === 10 ? "0" : String(pageChip.page)
                   color: pageChip.current ? root.selectedText : root.foreground
                   font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.small
+                  font.pixelSize: Style.font.bodySmall
                 }
                 MouseArea {
                   anchors.fill: parent
@@ -416,7 +416,7 @@ Item {
                   color: root.foreground
                   opacity: 0.35
                   font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.small
+                  font.pixelSize: Style.font.bodySmall
                 }
               }
             }
@@ -450,7 +450,7 @@ Item {
                 radiusPx: Style.cornerRadius / 2
                 fontFamily: Style.font.menuFamily
                 fontBody: Style.font.body
-                fontSmall: Style.font.small
+                fontSmall: Style.font.bodySmall
               }
             }
           }
@@ -462,7 +462,7 @@ Item {
             color: root.foreground
             opacity: 0.45
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.small
+            font.pixelSize: Style.font.bodySmall
           }
         }
       }
