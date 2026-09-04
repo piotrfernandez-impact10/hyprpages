@@ -268,19 +268,21 @@ def cmd_apply(args) -> int:
 
     fmt = args.format or detect_format()
 
-    if args.stdin:
-        # The editor hands back the whole configuration in one call rather
-        # than a flag per change, so an edit session is atomic: either the new
-        # layout is saved and applied, or nothing is touched.
-        cfg = PagesConfig.from_dict(json.load(sys.stdin))
-        cfg.save()
-    else:
-        cfg = PagesConfig.load()
+    # The editor hands back the whole configuration in one call rather than a
+    # flag per change, so an edit session is atomic: either the new layout is
+    # saved and applied, or nothing is touched.
+    cfg = PagesConfig.from_dict(json.load(sys.stdin)) if args.stdin else PagesConfig.load()
 
     if not cfg.monitors:
         # A first run has nothing saved yet; without this, apply would happily
         # generate a config with no monitors in it and report success.
         cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
+
+    if args.stdin:
+        # Saved after the inference, so what is stored matches what was written.
+        # Saving first left `monitors: []` on disk beside a config that had
+        # them, and the next run re-inferred from whatever was plugged in.
+        cfg.save()
 
     rendered = cfg.render(fmt)
     if args.dry_run:

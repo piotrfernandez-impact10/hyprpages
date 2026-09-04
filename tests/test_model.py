@@ -133,6 +133,34 @@ class TestKeepTogether:
         assert "together_patterns" in lua
         assert 'hl.on("window.open"' in lua
 
+    @pytest.mark.parametrize(
+        "regex,expected",
+        [
+            # `-` is ordinary in a regex and a lazy quantifier in Lua, so an
+            # unescaped hyphenated class matches nothing at all. Verified
+            # against a real Lua interpreter.
+            (r"^google-chrome$", "^google%-chrome$"),
+            (r"^code-oss$", "^code%-oss$"),
+            (r"^foo%bar$", "^foo%%bar$"),
+            (r"^org\.qbittorrent\.qBittorrent$", "^org%.qbittorrent%.qBittorrent$"),
+            (r"^chrome-web\.whatsapp\.com__-Default$", "^chrome%-web%.whatsapp%.com__%-Default$"),
+            (r"^steam_app_battlenet$", "^steam_app_battlenet$"),
+        ],
+    )
+    def test_every_lua_magic_character_is_escaped(self, cfg, regex, expected):
+        cfg.apps = [App(pattern=regex, page=1, monitor="HDMI-A-1", together=True)]
+        assert f'"{expected}"' in cfg.to_lua()
+
+    def test_special_workspaces_are_never_adopted_as_a_home(self, cfg):
+        """A scratchpad id would drag every later window into the scratchpad."""
+        cfg.apps = [App(pattern="^mpv$", page=1, monitor="HDMI-A-1", together=True)]
+        lua = cfg.to_lua()
+        assert "workspace.id >= 1" in lua
+
+    def test_a_closed_group_forgets_its_home(self, cfg):
+        cfg.apps = [App(pattern="^mpv$", page=1, monitor="HDMI-A-1", together=True)]
+        assert 'hl.on("window.destroy"' in cfg.to_lua()
+
     def test_regex_escapes_become_lua_escapes(self, cfg):
         """Lua patterns escape with %, and a backslash there means something
         else entirely - an unconverted pattern would silently never match."""

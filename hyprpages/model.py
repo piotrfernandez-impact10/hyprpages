@@ -291,13 +291,17 @@ hl.on("window.open", function(win)
   end
 
   local home = together_home[key]
+  if home and home < 1 then
+    home = nil  -- the group's home was a special workspace; forget it
+    together_home[key] = nil
+  end
   if home then
     hl.dispatch(hl.dsp.window.move({{
       workspace = tostring(home),
       follow = false,
       window = "address:" .. tostring(address),
     }}))
-  elseif workspace then
+  elseif workspace and type(workspace.id) == "number" and workspace.id >= 1 then
     together_home[key] = workspace.id
   end
 end)
@@ -312,8 +316,23 @@ hl.on("window.move_to_workspace", function(win)
     return
   end
   local key = together_key(class)
-  if key then
+  if key and type(workspace.id) == "number" and workspace.id >= 1 then
     together_home[key] = workspace.id
+  end
+end)
+
+-- A group whose last window closed should not drag the next one back to a page
+-- you have since left.
+hl.on("window.destroy", function(win)
+  local ok, class = pcall(function()
+    return win.class
+  end)
+  if not ok then
+    return
+  end
+  local key = together_key(class)
+  if key then
+    together_home[key] = nil
   end
 end)
 """
@@ -369,14 +388,36 @@ end)
 """
 
 
+# Magic in a Lua pattern, and so needing a % in front of a literal one. `-` is
+# the trap: it is an ordinary character in a regex but a lazy quantifier here,
+# which is why an unescaped `google-chrome` matches nothing at all.
+_LUA_MAGIC = set("^$*+?.([%-")
+
+
 def _lua_pattern(pattern: str) -> str:
     """Turn our regex into a Lua pattern.
 
-    Lua patterns escape with % rather than a backslash, and class_to_pattern
-    only ever emits backslash escapes, so swapping the escape character is
-    enough for anything this tool generates.
+    Anchors are kept as anchors; every other magic character becomes a literal.
+    class_to_pattern only ever emits backslash escapes and literal text, so
+    there is no regex construct here that Lua cannot express.
     """
-    return re.sub(r"\\(.)", r"%\1", pattern)
+    out: list[str] = []
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\" and index + 1 < len(pattern):
+            out.append("%" + pattern[index + 1])
+            index += 2
+            continue
+        anchor = (char == "^" and index == 0) or (char == "$" and index == len(pattern) - 1)
+        if anchor:
+            out.append(char)  # anchors stay anchors; everything else goes literal
+        elif char in _LUA_MAGIC:
+            out.append("%" + char)
+        else:
+            out.append(char)
+        index += 1
+    return "".join(out)
 
 
 def _lua_escape(value: str) -> str:

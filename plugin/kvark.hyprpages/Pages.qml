@@ -189,7 +189,12 @@ Item {
     var apps = (root.config.apps || []).slice()
     for (var i = 0; i < apps.length; i++) {
       if (apps[i].pattern === pattern) {
-        apps[i] = Object.assign({}, apps[i], { page: page, monitor: monitor })
+        apps[i] = Object.assign({}, apps[i], {
+          page: page,
+          monitor: monitor,
+          float: !!floating,
+          size: floating && size ? size : ""
+        })
         root.config = Object.assign({}, root.config, { apps: apps })
         root.dirty = true
         return
@@ -264,12 +269,13 @@ Item {
         return
       }
     }
-    var entry = root.menuEntry
+    // No monitor, so workspace_for returns nothing and no placement rule is
+    // emitted: grouping an app must not silently pin it to a page as well.
     apps.push({
       pattern: pattern,
-      page: (entry && entry.page) || root.currentPage,
-      monitor: (entry && entry.onMonitor) || "",
-      float: !!(entry && entry.floating),
+      page: root.currentPage,
+      monitor: "",
+      float: false,
       size: "",
       together: together,
       label: windowClass
@@ -349,7 +355,10 @@ Item {
     if (!root.opened) return
     root.busy = true
     root.error = ""
-    applyProcess.write(JSON.stringify(root.config))
+    // The payload is handed over in onStarted: Process.write before the
+    // process is running goes nowhere, and `hyprpages apply --stdin` then
+    // blocks forever on a pipe that is open but never written.
+    applyProcess.payload = JSON.stringify(root.config)
     applyProcess.running = true
   }
 
@@ -365,8 +374,13 @@ Item {
           var parsed = JSON.parse(String(text || "{}"))
           root.monitors = parsed.monitors || []
           root.windows = parsed.windows || []
-          root.config = parsed.config || root.config
-          if (root.config.apps === undefined) root.config.apps = []
+          // Unsaved edits win: a refresh fires after every move, launch and
+          // `r`, and taking the on-disk config back would quietly undo what the
+          // user just did while the header still read "unsaved".
+          if (!root.dirty) {
+            root.config = parsed.config || root.config
+            if (root.config.apps === undefined) root.config.apps = []
+          }
         } catch (e) {
           root.error = "could not read desktop state: " + e
         }
@@ -431,6 +445,12 @@ Item {
     id: applyProcess
     command: ["hyprpages", "apply", "--stdin"]
     stdinEnabled: true
+    property string payload: ""
+    onStarted: {
+      write(applyProcess.payload)
+      applyProcess.payload = ""
+      stdinEnabled = false  // closing the pipe is what lets the CLI finish
+    }
     stdout: StdioCollector {
       onStreamFinished: {
         root.busy = false
@@ -540,6 +560,9 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_R) {
             root.refresh()
+            event.accepted = true
+          } else if (event.key === Qt.Key_L) {
+            root.togglePairing()
             event.accepted = true
           }
         }
@@ -1011,7 +1034,7 @@ Item {
           Text {
             Layout.fillWidth: true
             text: "+ adds an app here   ·   drag a window between screens   ·   right-click for options   "
-                  + "·   1-0 page   ·   R refresh   ·   Enter apply   ·   Esc close"
+                  + "·   1-0 page   ·   L link screens   ·   R refresh   ·   Enter apply   ·   Esc close"
             color: root.mutedText
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.caption
