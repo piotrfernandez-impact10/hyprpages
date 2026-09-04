@@ -72,6 +72,10 @@ Item {
     stateProcess.running = false
     moveProcess.running = false
     applyProcess.running = false
+    appsProcess.running = false
+    launchProcess.running = false
+    refreshAfterLaunch.stop()
+    root.closePicker()
     canvas_snapReset()
     root.closeMenu()
     root.busy = false
@@ -252,18 +256,46 @@ Item {
     root.dirty = true
   }
 
-  // "Add something here": focus the page's workspace on that screen, close the
-  // editor, and hand over to Omarchy's own app launcher. Whatever is started
-  // next opens on the focused workspace, so the launcher needs to know nothing
-  // about pages, and the user gets the launcher they already know rather than
-  // a second-rate copy of it.
+  // "Add something here". The editor stays open and offers the choice in
+  // place: being thrown at a workspace to pick an app loses the context you
+  // were arranging, which is the whole point of the editor.
+  property bool pickerOpen: false
+  property string pickerMonitor: ""
+  property string pickerFilter: ""
+  property int pickerIndex: 0
+  property var apps: []
+
   function addTo(page, monitor) {
     if (!monitor) return
-    addProcess.command = ["sh", "-c",
-      "hypr-spaces focus --page " + page + " --monitor '" + monitor
-      + "' && omarchy-menu toggle apps"]
-    root.dismiss()
-    addProcess.running = true
+    root.pickerMonitor = monitor
+    root.pickerFilter = ""
+    root.pickerIndex = 0
+    root.pickerOpen = true
+    if (!root.apps.length) appsProcess.running = true
+  }
+
+  function closePicker() {
+    root.pickerOpen = false
+    root.pickerFilter = ""
+  }
+
+  function filteredApps() {
+    var needle = root.pickerFilter.toLowerCase()
+    if (!needle) return root.apps
+    return root.apps.filter(function (a) {
+      return a.name.toLowerCase().indexOf(needle) >= 0
+    })
+  }
+
+  function launchPicked() {
+    var list = root.filteredApps()
+    if (!list.length) return
+    var app = list[Math.max(0, Math.min(root.pickerIndex, list.length - 1))]
+    launchProcess.command = ["hypr-spaces", "launch", app.id,
+                             "--page", String(root.currentPage),
+                             "--monitor", root.pickerMonitor]
+    launchProcess.running = true
+    root.closePicker()
   }
 
   // Move the live windows of a class, so a drag has a visible effect at once.
@@ -311,13 +343,37 @@ Item {
   }
 
   Process {
-    id: addProcess
+    id: appsProcess
+    command: ["hypr-spaces", "apps"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          root.apps = JSON.parse(String(text || "[]"))
+        } catch (e) {
+          root.error = "could not read the application list"
+        }
+      }
+    }
+  }
+
+  Process {
+    id: launchProcess
+    stdout: StdioCollector {
+      // A new window takes a moment to map, so look again shortly after.
+      onStreamFinished: refreshAfterLaunch.start()
+    }
     stderr: StdioCollector {
       onStreamFinished: {
         var message = String(text || "").trim()
         if (message) root.error = message
       }
     }
+  }
+
+  Timer {
+    id: refreshAfterLaunch
+    interval: 900
+    onTriggered: root.refresh()
   }
 
   Process {
@@ -409,6 +465,29 @@ Item {
         focus: true
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function (event) {
+          // While the picker is open it takes the keyboard: typing filters,
+          // Escape backs out of the picker rather than the whole editor.
+          if (root.pickerOpen) {
+            if (event.key === Qt.Key_Escape) {
+              root.closePicker()
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              root.launchPicked()
+            } else if (event.key === Qt.Key_Down) {
+              root.pickerIndex = Math.min(root.pickerIndex + 1,
+                                          root.filteredApps().length - 1)
+            } else if (event.key === Qt.Key_Up) {
+              root.pickerIndex = Math.max(0, root.pickerIndex - 1)
+            } else if (event.key === Qt.Key_Backspace) {
+              root.pickerFilter = root.pickerFilter.slice(0, -1)
+              root.pickerIndex = 0
+            } else if (event.text && event.text.length === 1 && event.text >= " ") {
+              root.pickerFilter += event.text
+              root.pickerIndex = 0
+            }
+            event.accepted = true
+            return
+          }
+
           if (event.key === Qt.Key_Escape) {
             root.dismiss()
             event.accepted = true
@@ -865,6 +944,147 @@ Item {
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.caption
           }
+        }
+      }
+    }
+
+    // Application picker. Sits over the card so the arrangement stays visible
+    // behind it - you are choosing what to add to a specific screen, and that
+    // screen should still be on screen.
+    MouseArea {
+      anchors.fill: parent
+      visible: root.pickerOpen
+      enabled: root.pickerOpen
+      onClicked: root.closePicker()
+      z: 200
+    }
+
+    BorderSurface {
+      id: picker
+      visible: root.pickerOpen
+      z: 201
+
+      anchors.centerIn: parent
+      width: Style.space(420)
+      height: Math.min(panel.height - Style.gapsOut * 6, Style.space(460))
+      color: root.background
+      radius: root.cornerRadius
+      borderSpec: root.borderSpec
+      padding: Style.spacing.panelPadding
+
+      MouseArea { anchors.fill: parent; onClicked: {} }
+
+      ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: Style.spacing.panelPadding
+        spacing: Style.spacing.sm
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.spacing.sm
+
+          Text {
+            text: "Add to " + root.pickerMonitor
+            color: root.foreground
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.subtitle
+            font.bold: true
+          }
+
+          Item { Layout.fillWidth: true }
+
+          Text {
+            text: "page " + root.currentPage
+            color: root.mutedText
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+
+        // The filter is the typing itself; a focused text field would fight
+        // the overlay's exclusive keyboard grab for no gain.
+        Text {
+          Layout.fillWidth: true
+          text: root.pickerFilter.length ? root.pickerFilter : "type to filter…"
+          color: root.pickerFilter.length ? root.foreground : root.mutedText
+          elide: Text.ElideRight
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.body
+        }
+
+        PanelSeparator { Layout.fillWidth: true }
+
+        ListView {
+          id: appList
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+          clip: true
+          model: root.filteredApps()
+          currentIndex: root.pickerIndex
+          highlightMoveDuration: 90
+          // Keep the keyboard selection in view as it moves.
+          onCurrentIndexChanged: appList.positionViewAtIndex(appList.currentIndex,
+                                                             ListView.Contain)
+
+          delegate: Rectangle {
+            id: appRow
+            required property var modelData
+            required property int index
+
+            width: appList.width
+            height: Style.space(30)
+            radius: Style.cornerRadius / 2
+            color: appRow.index === root.pickerIndex ? root.selectedBackground
+                 : rowHover.hovered ? Qt.lighter(root.background, 1.25)
+                 : "transparent"
+
+            HoverHandler { id: rowHover }
+
+            RowLayout {
+              anchors.fill: parent
+              anchors.leftMargin: Style.spacing.sm
+              anchors.rightMargin: Style.spacing.sm
+              spacing: Style.spacing.sm
+
+              Image {
+                source: appRow.modelData.icon
+                  ? Quickshell.iconPath(appRow.modelData.icon, true) : ""
+                visible: source !== ""
+                sourceSize.width: Style.font.body + 6
+                sourceSize.height: Style.font.body + 6
+                Layout.preferredWidth: Style.font.body + 6
+                Layout.preferredHeight: Style.font.body + 6
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+              }
+
+              Text {
+                Layout.fillWidth: true
+                text: appRow.modelData.name
+                color: appRow.index === root.pickerIndex ? root.selectedText
+                                                         : root.foreground
+                elide: Text.ElideRight
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.body
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              onClicked: {
+                root.pickerIndex = appRow.index
+                root.launchPicked()
+              }
+            }
+          }
+        }
+
+        Text {
+          Layout.fillWidth: true
+          text: "enter opens it here   ·   esc cancels"
+          color: root.mutedText
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.caption
         }
       }
     }

@@ -121,3 +121,40 @@ def icon_for(window_class: str, process: str = "") -> str:
             return by_stem[process]
 
     return ""
+
+
+def applications() -> list[dict]:
+    """Launchable desktop entries, sorted by name.
+
+    Filtered the way a launcher must be: entries marked NoDisplay or Hidden are
+    infrastructure (mime handlers, session pieces) rather than things a person
+    starts, and an entry that is not an Application cannot be launched at all.
+    """
+    seen: dict[str, dict] = {}
+    for root in data_dirs():
+        directory = root / "applications"
+        if not directory.is_dir():
+            continue
+        for entry in sorted(directory.glob("*.desktop")):
+            if entry.stem in seen:
+                continue  # a more specific directory already provided it
+            try:
+                fields = _entry_fields(entry.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            if fields.get("Type", "Application") != "Application":
+                continue
+            if fields.get("NoDisplay", "").lower() == "true":
+                continue
+            if fields.get("Hidden", "").lower() == "true":
+                continue
+            name = fields.get("Name")
+            if not name:
+                continue
+            seen[entry.stem] = {
+                "id": entry.name,
+                "name": name,
+                "icon": fields.get("Icon", ""),
+                "comment": fields.get("Comment", ""),
+            }
+    return sorted(seen.values(), key=lambda a: a["name"].lower())

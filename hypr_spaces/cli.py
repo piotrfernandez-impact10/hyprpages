@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 
-from . import capture, hypr
+from . import capture, desktop, hypr
 from .model import App, SpacesConfig, class_to_pattern
 
 
@@ -172,6 +173,42 @@ def cmd_focus(args) -> int:
     return 0
 
 
+def cmd_apps(_args) -> int:
+    """The launchable applications, for the editor's picker."""
+    json.dump(desktop.applications(), sys.stdout)
+    print()
+    return 0
+
+
+def cmd_launch(args) -> int:
+    """Start an application on a given page and screen.
+
+    Focus first, then launch: a new window opens on the focused workspace, so
+    this needs no cooperation from the application or from Hyprland rules.
+    Launched through uwsm-app so it joins the session scope like anything
+    started from Omarchy's own launcher.
+    """
+    cfg = SpacesConfig.load()
+    if not cfg.monitors:
+        cfg.monitors = infer_monitor_order(hypr.monitors(), cfg.offset)
+
+    workspace = cfg.workspace_for(args.page, args.monitor)
+    if workspace is None:
+        print(f"no workspace for page {args.page} on {args.monitor}", file=sys.stderr)
+        return 1
+
+    hypr.focus_workspace(args.monitor, workspace)
+    entry = args.desktop_id.removesuffix(".desktop")
+    subprocess.Popen(
+        ["uwsm-app", "--", "gtk-launch", entry],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    print(f"launched {entry} on workspace {workspace}")
+    return 0
+
+
 def cmd_apply(args) -> int:
     if args.stdin:
         # The editor hands back the whole configuration in one call rather
@@ -217,6 +254,14 @@ def main(argv: list[str] | None = None) -> int:
     move_parser.add_argument("--page", type=int, required=True)
     move_parser.add_argument("--monitor", required=True)
     move_parser.set_defaults(func=cmd_move)
+
+    sub.add_parser("apps", help="list launchable applications as JSON").set_defaults(func=cmd_apps)
+
+    launch_parser = sub.add_parser("launch", help="start an app on a page and screen")
+    launch_parser.add_argument("desktop_id", help="desktop entry id, e.g. spotify.desktop")
+    launch_parser.add_argument("--page", type=int, required=True)
+    launch_parser.add_argument("--monitor", required=True)
+    launch_parser.set_defaults(func=cmd_launch)
 
     focus_parser = sub.add_parser("focus", help="focus a page's workspace on one screen")
     focus_parser.add_argument("--page", type=int, required=True)
