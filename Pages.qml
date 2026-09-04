@@ -8,7 +8,7 @@
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import Quickshell.Wayland._ToplevelManagement
+import Quickshell.Hyprland
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -212,37 +212,45 @@ Item {
     return best
   }
 
-  // Pair a window with the Wayland toplevel that represents it.
+  // The Wayland toplevel a window's content can be captured from.
   //
-  // The two come from different protocols: windows from hyprctl, which knows
-  // addresses, and toplevels from wlr-foreign-toplevel-management, which does
-  // not. So they are matched on what both expose - the app id against the
-  // class, and the title to tell two windows of one app apart, which is
-  // exactly the case of four terminals side by side.
+  // Hyprland's own toplevel objects carry both the address hyprctl uses and the
+  // Wayland handle screencopy needs, so this is an exact pairing. Matching on
+  // app id and title instead - the obvious route, since foreign-toplevel
+  // exposes no address - is wrong twice over: our titles are a snapshot from
+  // the last state read while toplevel titles are live, so two windows of one
+  // app that swap titles get each other's content; and reading every
+  // toplevel's title inside a binding makes each tile depend on all of them,
+  // so any title change re-evaluates every tile and restarts its capture.
+  // Hyprland's IPC reports addresses bare ("55bbd11069f0") while hyprctl
+  // prints them prefixed ("0x55bbd11069f0"), so they have to be normalised
+  // before comparing or nothing ever matches.
+  function normaliseAddress(value) {
+    var text = String(value || "").toLowerCase()
+    return text.indexOf("0x") === 0 ? text.substring(2) : text
+  }
+
   function toplevelFor(entry) {
-    if (!entry || !entry.class) return null
-    var list = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
-    var sameApp = []
+    if (!entry || !entry.address) return null
+    var want = root.normaliseAddress(entry.address)
+    var list = Hyprland.toplevels ? Hyprland.toplevels.values : []
     for (var i = 0; i < list.length; i++) {
-      var t = list[i]
-      if (!t) continue
-      if (String(t.appId || "") === String(entry.class)) sameApp.push(t)
+      if (list[i] && root.normaliseAddress(list[i].address) === want) {
+        return list[i].wayland || null
+      }
     }
-    if (!sameApp.length) return null
-    if (sameApp.length === 1) return sameApp[0]
-    for (var j = 0; j < sameApp.length; j++) {
-      if (String(sameApp[j].title || "") === String(entry.title || "")) return sameApp[j]
-    }
-    // Ambiguous: showing the wrong window's content would be worse than
-    // showing none, so fall back to the icon.
     return null
   }
 
   function toggleLiveView() {
-    root.config = Object.assign({}, root.config, {
-      live_view: !root.config.live_view
-    })
-    root.dirty = true
+    var next = !root.config.live_view
+    root.config = Object.assign({}, root.config, { live_view: next })
+    // Saved on its own rather than through apply: this never reaches the
+    // generated Hyprland config, so routing it through apply would reload the
+    // compositor for a view preference - and would make the session dirty,
+    // which stops refreshes taking new state.
+    prefProcess.command = [root.cli, "set", "live-view", next ? "true" : "false"]
+    prefProcess.running = true
   }
 
   function monitorByName(name) {
@@ -535,6 +543,16 @@ Item {
         } catch (e) {
           root.error = "could not read the application list"
         }
+      }
+    }
+  }
+
+  Process {
+    id: prefProcess
+    stderr: StdioCollector {
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.error = message
       }
     }
   }
@@ -1146,7 +1164,7 @@ Item {
                 }
                 iconSource: tile.modelData.icon
                   ? Quickshell.iconPath(tile.modelData.icon, true) : ""
-                liveView: root.config.live_view === true
+                liveView: root.config.live_view === true && root.opened
                 toplevel: root.config.live_view === true
                   ? root.toplevelFor(tile.modelData) : null
                 onContextRequested: function (gx, gy) { root.openMenu(tile.modelData, gx, gy) }

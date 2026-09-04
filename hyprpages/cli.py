@@ -294,6 +294,28 @@ def _launch_command(entry: str) -> list[str] | None:
     return base
 
 
+SETTINGS = {"live-view": "live_view", "link-screens": "pair_monitors"}
+
+
+def cmd_set(args) -> int:
+    """Change one setting, without touching the generated Hyprland config.
+
+    View preferences must not travel through `apply`: that rewrites the
+    generated config and reloads the compositor, which is absurd for a flag
+    that never reaches it.
+    """
+    field = SETTINGS.get(args.name)
+    if field is None:
+        print(f"unknown setting {args.name}; try: {', '.join(SETTINGS)}", file=sys.stderr)
+        return 1
+
+    cfg = PagesConfig.load()
+    setattr(cfg, field, args.value.lower() in ("1", "true", "yes", "on"))
+    cfg.save()
+    print(f"{args.name} = {getattr(cfg, field)}")
+    return 0
+
+
 def cmd_apply(args) -> int:
     from .model import detect_format, output_path
 
@@ -401,6 +423,11 @@ def main(argv: list[str] | None = None) -> int:
         help="focus this window first (0x...), so the new one opens beside it",
     )
     launch_parser.set_defaults(func=cmd_launch)
+
+    set_parser = sub.add_parser("set", help="change one setting, without reloading Hyprland")
+    set_parser.add_argument("name", choices=sorted(SETTINGS))
+    set_parser.add_argument("value")
+    set_parser.set_defaults(func=cmd_set)
 
     close_parser = sub.add_parser("close", help="ask one window to close")
     close_parser.add_argument("address", help="window address, e.g. 0x55...")

@@ -6,7 +6,7 @@
 
 import QtQuick
 import QtQuick.Layouts
-import Quickshell.Wayland._Screencopy
+import Quickshell.Wayland
 
 Rectangle {
   id: card
@@ -30,7 +30,10 @@ Rectangle {
   // unambiguous match was found, in which case the icon stands in.
   property bool liveView: false
   property var toplevel: null
-  readonly property bool showingLive: liveView && toplevel !== null
+  // Only once a frame has arrived: flipping as soon as a toplevel matched hid
+  // the icon before the capture had anything to show, so tiles went blank.
+  readonly property bool wantsLive: liveView && toplevel !== null
+  readonly property bool showingLive: wantsLive && livePreviewLoader.hasContent
   property color foreground: "white"
   property color surface: "black"
   property color outline: "gray"
@@ -185,21 +188,44 @@ Rectangle {
   // The window's own content, filling the tile. Behind the controls and the
   // caption, and inset so the screen outline and this card's border stay
   // visible - a preview that reaches the edge looks like a hole in the page.
-  ScreencopyView {
-    id: livePreview
-    visible: card.showingLive
+  // A Loader, so with live view off there is no capture session at all rather
+  // than an idle one per window.
+  Loader {
+    id: livePreviewLoader
+    active: card.wantsLive
+    // Visible as soon as it is wanted, not once it has content: an invisible
+    // ScreencopyView never captures, so gating visibility on hasContent left
+    // it waiting for a frame it would never be asked to produce.
+    visible: card.wantsLive
     anchors.fill: parent
-    anchors.margins: 2
-    captureSource: card.showingLive ? card.toplevel : null
-    live: true
-    paintCursor: false
+    // Inset past the corner radius: clip() clips to the bounding box, not the
+    // rounded shape, so a smaller inset lets the preview paint over the very
+    // border it is meant to leave visible.
+    anchors.margins: Math.max(2, card.radiusPx)
     z: 1
+
+    readonly property bool hasContent: livePreviewLoader.item
+      ? livePreviewLoader.item.hasContent : false
+
+    sourceComponent: ScreencopyView {
+      captureSource: card.toplevel
+      // Streams only while the editor is showing this tile; a hidden editor
+      // must not keep pulling frames.
+      live: card.liveView && card.visible
+      paintCursor: false
+      // Without this the source is captured at its own resolution - a 4K
+      // window streaming full-size buffers into a thumbnail.
+      constraintSize: Qt.size(Math.max(1, card.width), Math.max(1, card.height))
+    }
   }
 
   // A caption over the live view, so a preview is still identifiable when the
   // content itself is ambiguous - two empty terminals, say.
   Rectangle {
-    visible: card.showingLive && card.showName
+    // Its own budget, not the icon layout's: showName is derived from iconSize,
+    // which does not apply in live view, and hid the caption on the small
+    // tiles where a preview is least identifiable.
+    visible: card.showingLive && card.height > card.fontSmall * 3
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.bottom: parent.bottom
@@ -230,16 +256,18 @@ Rectangle {
 
   ColumnLayout {
     id: content
+    // Above the preview, and shown until the first frame lands, so a tile
+    // shows its icon rather than a blank rectangle while the capture starts.
+    z: 3
     visible: !card.showingLive
     anchors.centerIn: parent
     width: Math.max(20, parent.width - card.textInset * 2)
     spacing: Math.max(2, card.pad / 2)
 
     Item {
-      visible: !card.showingLive
       Layout.alignment: Qt.AlignHCenter
-      Layout.preferredWidth: card.showingLive ? 0 : card.iconSize
-      Layout.preferredHeight: card.showingLive ? 0 : card.iconSize
+      Layout.preferredWidth: card.iconSize
+      Layout.preferredHeight: card.iconSize
 
       Image {
         anchors.fill: parent
