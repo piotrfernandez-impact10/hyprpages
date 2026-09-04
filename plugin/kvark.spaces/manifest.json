@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "kvark.spaces",
+  "name": "Spaces",
+  "version": "0.1.0",
+  "author": "Impact10",
+  "description": "Visual editor for pages: see what is running and drag it where it belongs",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": false,
+  "entryPoints": {
+    "overlay": "Spaces.qml"
+  }
+}
