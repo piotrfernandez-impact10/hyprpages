@@ -92,6 +92,30 @@ There is deliberately no `pip install`: the tool has no dependencies, and
 `pip install --user` fails outright on distributions that mark Python as
 externally managed (PEP 668).
 
+## Remove
+
+```bash
+omarchy plugin remove kvark.hyprpages
+```
+
+If you installed from a clone, also delete the symlink `install.sh` made:
+
+```bash
+rm -f ~/.local/bin/hyprpages
+```
+
+Neither touches your Hyprland configuration, because nothing here ever edited
+it: `apply` only ever writes its own `~/.config/hypr/hyprpages.lua` (or
+`hyprpages.conf`), which is loaded because *you* added one line to
+`hyprland.lua`. To finish undoing it, delete that line and the generated file:
+
+```bash
+rm -f ~/.config/hypr/hyprpages.lua        # or ~/.config/hypr/hyprpages.conf
+rm -rf ~/.config/hyprpages                # pages.json, the editor's own state
+```
+
+Your workspaces stay wherever they are; only the rules that pinned them go.
+
 ## Use
 
 ```bash
