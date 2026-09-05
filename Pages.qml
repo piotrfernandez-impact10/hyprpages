@@ -1163,7 +1163,10 @@ Item {
               WindowCard {
                 id: tile
                 required property var modelData
-                z: 1  // windows sit inside their screen
+                // Windows sit inside their screen; the one being dragged rises
+                // above everything, including the drop preview, so the hand
+                // never loses the thing it is carrying.
+                z: tile.dragging ? 25 : 1
 
                 readonly property var screenOf: root.monitorByName(tile.modelData.onMonitor)
                 readonly property bool placeable: !!tile.screenOf
@@ -1267,10 +1270,11 @@ Item {
               }
             }
 
-            // Where the dragged tile will land. Drawn last so it sits above the
-            // tiles, and only while a drag is in flight.
+            // Where the dragged tile will land, drawn only while a drag is in
+            // flight. Above the other tiles so a maximised window cannot bury
+            // it, below the tile being dragged.
             Rectangle {
-              z: 20  // the drop preview is the most important thing on screen
+              z: 20
               visible: canvas.snap !== null
               x: canvas.snap ? canvas.snap.x : 0
               y: canvas.snap ? canvas.snap.y : 0
@@ -1281,15 +1285,9 @@ Item {
               border.width: 2
               border.color: root.selectedText
               opacity: 0.9
-
-              Text {
-                anchors.centerIn: parent
-                visible: parent.height > 30
-                text: canvas.snap ? canvas.snap.monitor : ""
-                color: root.selectedText
-                font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.bodySmall
-              }
+              // No label: the target screen already lights up and its name
+              // plate turns with it, and a name centred here landed under the
+              // cursor - on top of the dragged window's own name.
             }
           }
 
