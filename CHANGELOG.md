@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Live view**: each window drawn with its own real content instead of an
+  icon, so you recognise the desktop you are editing. `V` toggles it, and with
+  it off no capture session exists at all. Works for windows on pages that are
+  not currently on screen.
+- `hyprpages set <name> <value>` for view preferences, which must not travel
+  through `apply` -- that rewrites the generated config and reloads the
+  compositor, absurd for a flag that never reaches it.
 - `hyprpages launch --new` to start another instance of an application that is
   already open, rather than moving the one that exists.
 - Linked screens are a toggle: pages can move every monitor together, or leave
