@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Per-app **"keep it on every page"**: the app follows you instead of living on
+  one page — a video call, a player, a monitoring window. Hyprland only pins
+  floating windows, so the generated rule floats it too rather than emitting a
+  rule that quietly does nothing. Works in both output formats.
 - **Live view**: each window drawn with its own real content instead of an
   icon, so you recognise the desktop you are editing. `V` toggles it, and with
   it off no capture session exists at all. Works for windows on pages that are

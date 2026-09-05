@@ -25,6 +25,7 @@ Rectangle {
   property string iconSource: ""
   // Its windows are set to stay on one workspace together.
   property bool grouped: false
+  property bool pinned: false
   // Live view: the window's own content instead of its icon. `toplevel` is the
   // Wayland handle the capture reads from, matched by the parent; null when no
   // unambiguous match was found, in which case the icon stands in.
@@ -290,9 +291,11 @@ Rectangle {
 
     // Badges sit under the name so the centred column stays a column.
     Text {
-      visible: card.showName && (card.grouped || card.entry.floating === true)
+      visible: card.showName
+               && (card.grouped || card.pinned || card.entry.floating === true)
       Layout.fillWidth: true
-      text: [card.grouped ? "grouped" : "", card.entry.floating === true ? "float" : ""]
+      text: [card.pinned ? "on every page" : "", card.grouped ? "grouped" : "",
+             card.entry.floating === true ? "float" : ""]
         .filter(function (part) { return part !== "" }).join("  ·  ")
       color: card.foreground
       opacity: 0.5

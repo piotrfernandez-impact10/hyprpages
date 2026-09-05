@@ -383,6 +383,36 @@ Item {
     root.dirty = true
   }
 
+  // Whether the app stays with you instead of living on a page. Hyprland's
+  // `pin` only works on floating windows, so the generated rule floats it too;
+  // the editor does not silently rewrite the float flag to say so, because the
+  // flag is what you asked for and floating is how it gets done.
+  function setPinned(windowClass, pinned) {
+    var pattern = root.patternFor(windowClass)
+    var apps = (root.config.apps || []).slice()
+    for (var i = 0; i < apps.length; i++) {
+      if (apps[i].pattern === pattern) {
+        apps[i] = Object.assign({}, apps[i], { pin: pinned })
+        root.config = Object.assign({}, root.config, { apps: apps })
+        root.dirty = true
+        return
+      }
+    }
+    // No monitor, as with grouping: keeping an app with you must not also pin
+    // it to whichever page you happened to be looking at.
+    apps.push({
+      pattern: pattern,
+      page: root.currentPage,
+      monitor: "",
+      float: false,
+      size: "",
+      pin: pinned,
+      label: windowClass
+    })
+    root.config = Object.assign({}, root.config, { apps: apps })
+    root.dirty = true
+  }
+
   function setFloating(windowClass, floating) {
     var entry = root.menuEntry
     var page = entry && entry.page ? entry.page : root.currentPage
@@ -1190,6 +1220,10 @@ Item {
                   var rule = root.ruleFor(tile.modelData.class)
                   return !!(rule && rule.together)
                 }
+                pinned: {
+                  var rule = root.ruleFor(tile.modelData.class)
+                  return !!(rule && rule.pin)
+                }
                 iconSource: tile.modelData.icon
                   ? Quickshell.iconPath(tile.modelData.icon, true) : ""
                 liveView: root.config.live_view === true && root.opened
@@ -1713,6 +1747,9 @@ Item {
             { label: (contextMenu.rule && contextMenu.rule.together)
                 ? "Let its windows scatter" : "Keep its windows together",
               action: "together" },
+            { label: (contextMenu.rule && contextMenu.rule.pin)
+                ? "Let it stay on its page" : "Keep it on every page",
+              action: "pin" },
             { label: "Forget this rule", action: "forget" }
           ]
 
@@ -1747,6 +1784,9 @@ Item {
                 } else if (actionRow.modelData.action === "together") {
                   root.setTogether(contextMenu.windowClass,
                                    !(contextMenu.rule && contextMenu.rule.together))
+                } else if (actionRow.modelData.action === "pin") {
+                  root.setPinned(contextMenu.windowClass,
+                                 !(contextMenu.rule && contextMenu.rule.pin))
                 } else if (contextMenu.rule) {
                   root.forget(contextMenu.rule.pattern)
                 }

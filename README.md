@@ -58,6 +58,8 @@ Hyprland the CLI still does everything except the dragging.
 - **Writes the config** — workspace pinning and per-app placement rules, in
   either Lua or classic `hyprland.conf` syntax
 - **Moves real windows**, not just rules, so an edit has an effect immediately
+- **Keeps an app with you** — pin one to every page, for the call or the player
+  you want in front of you whichever page you are on
 
 ## Requirements
 

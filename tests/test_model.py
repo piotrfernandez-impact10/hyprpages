@@ -92,6 +92,32 @@ class TestLuaGeneration:
         assert "float = true" in lua
         assert "workspace" not in lua.split("-- Window placement.")[1].split("\n")[1]
 
+    def test_pinning_an_app_also_floats_it(self, cfg):
+        """Hyprland only pins floating windows, so a pin rule alone does
+        nothing. The float is emitted rather than the rule quietly failing."""
+        cfg.apps = [App(pattern="^Spotify$", page=2, monitor="DP-3", pin=True)]
+        lua = cfg.to_lua()
+        assert "pin = true" in lua
+        assert "float = true" in lua
+
+    def test_pinning_keeps_the_page_the_window_opens_on(self, cfg):
+        """Pinned means "comes with you", not "belongs nowhere" - it still has
+        a home to open on and to go back to."""
+        cfg.apps = [App(pattern="^Spotify$", page=2, monitor="DP-3", pin=True)]
+        assert 'workspace = "12 silent"' in cfg.to_lua()
+
+    def test_pinning_survives_the_conf_format(self, cfg):
+        cfg.apps = [App(pattern="^Spotify$", page=2, monitor="DP-3", pin=True)]
+        conf = cfg.to_conf()
+        assert "windowrule = pin, class:^Spotify$" in conf
+        assert "windowrule = float, class:^Spotify$" in conf
+
+    def test_an_unpinned_app_says_nothing_about_pinning(self, cfg):
+        cfg.apps = [App(pattern="^Spotify$", page=2, monitor="DP-3")]
+        rule = next(line for line in cfg.to_lua().splitlines() if "window_rule" in line)
+        assert "pin" not in rule
+        assert "float" not in rule
+
     def test_uses_only_hyprland_api_not_a_distro_helper(self, cfg):
         """The generated file must load on any Hyprland, not just one distro:
         `o.window` is an Omarchy wrapper around hl.window_rule."""

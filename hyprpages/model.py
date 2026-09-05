@@ -71,6 +71,7 @@ class App:
     float: bool = False
     size: str = ""  # e.g. "1280 720"; only meaningful when float
     together: bool = False  # new windows of this app join the others
+    pin: bool = False  # stays visible on every page, instead of living on one
     label: str = ""  # display name in the UI
 
     def workspace(self, cfg: PagesConfig) -> int | None:
@@ -190,10 +191,14 @@ class PagesConfig:
         ws = app.workspace(self)
         if ws is not None:
             rules.append(f"workspace {ws} silent")
-        if app.float:
+        # Hyprland only pins floating windows, so pinning implies floating -
+        # emitted here rather than left as a rule that quietly does nothing.
+        if app.float or app.pin:
             rules.append("float")
             if app.size:
                 rules.append(f"size {app.size}")
+        if app.pin:
+            rules.append("pin")
         return rules
 
     def to_lua(self) -> str:
@@ -233,10 +238,13 @@ class PagesConfig:
         ws = app.workspace(self)
         if ws is not None:
             rules.append(f'workspace = "{ws} silent"')
-        if app.float:
+        # See _conf_rules: a pinned window has to float.
+        if app.float or app.pin:
             rules.append("float = true")
             if app.size:
                 rules.append(f'size = "{_lua_escape(app.size)}"')
+        if app.pin:
+            rules.append("pin = true")
         if not rules:
             return f"-- (no rules for {app.pattern})"
         comment = f"  -- {app.label}" if app.label else ""
