@@ -151,10 +151,14 @@ def cmd_capture(args) -> int:
                 updated.append(cls)
             app.page = window["page"]
             app.monitor = window["monitor"]
-        # Never touched: `together` and `label`, which say what the user meant
-        # and cannot be read back off a running window.
-        app.float = window["floating"]
-        app.size = size
+        # A pinned app is floating because the rule says so, not because of
+        # anything visible yet - reading its live state back would clear the
+        # size the moment it was captured before the rule had been applied.
+        if not app.pin:
+            app.float = window["floating"]
+            app.size = size
+        # Never touched: `together`, `pin` and `label`, which say what the user
+        # meant and cannot be read back off a running window.
 
     untouched = len(kept) - len(added) - len(updated)
     summary = (

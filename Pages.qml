@@ -390,9 +390,16 @@ Item {
   function setPinned(windowClass, pinned) {
     var pattern = root.patternFor(windowClass)
     var apps = (root.config.apps || []).slice()
+    // Pinning forces the window to float, and a floating window with no size
+    // opens at whatever the application asks for - a chat window filling the
+    // screen. So the size it is now becomes the size it keeps: put the window
+    // where you want it, then pin it.
+    var size = root.liveSize(windowClass)
     for (var i = 0; i < apps.length; i++) {
       if (apps[i].pattern === pattern) {
-        apps[i] = Object.assign({}, apps[i], { pin: pinned })
+        var changed = { pin: pinned }
+        if (pinned && !apps[i].size && size) changed.size = size
+        apps[i] = Object.assign({}, apps[i], changed)
         root.config = Object.assign({}, root.config, { apps: apps })
         root.dirty = true
         return
@@ -405,12 +412,23 @@ Item {
       page: root.currentPage,
       monitor: "",
       float: false,
-      size: "",
+      size: pinned ? size : "",
       pin: pinned,
       label: windowClass
     })
     root.config = Object.assign({}, root.config, { apps: apps })
     root.dirty = true
+  }
+
+  // The size a class's window is on screen right now, as a rule string.
+  function liveSize(windowClass) {
+    for (var i = 0; i < root.windows.length; i++) {
+      var w = root.windows[i]
+      if (w.class === windowClass && w.size && w.size.length === 2) {
+        return Math.round(w.size[0]) + " " + Math.round(w.size[1])
+      }
+    }
+    return ""
   }
 
   function setFloating(windowClass, floating) {

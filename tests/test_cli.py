@@ -345,6 +345,19 @@ class TestCapture:
         )
         assert (cfg.apps[0].page, cfg.apps[0].monitor) == (7, "B")
 
+    def test_a_pinned_app_keeps_its_size(self, monkeypatch, tmp_path):
+        """Pinned means floating by rule, not by anything visible yet: reading
+        the live window back would clear the size before the rule applied."""
+        cfg = self._run(
+            monkeypatch,
+            tmp_path,
+            [self._window("Spotify", 2, floating=False)],
+            existing=[
+                App(pattern="^Spotify$", page=2, monitor="A", pin=True, float=True, size="700 900")
+            ],
+        )
+        assert (cfg.apps[0].float, cfg.apps[0].size) == (True, "700 900")
+
     def test_replace_drops_what_is_not_running(self, monkeypatch, tmp_path):
         cfg = self._run(
             monkeypatch,
