@@ -15,6 +15,24 @@ page N  ->  workspace N            on the first monitor
         ->  workspace N + 2*offset on a third
 ```
 
+![The editor showing one page across two monitors, each window drawn with its own live content](docs/editor-live-view.png)
+
+Both monitors of one page, drawn to scale. **Live view** fills each tile with
+the window's real content, so you recognise the desktop you are editing rather
+than reading a list of class names.
+
+![Dragging a floating window onto the left-hand screen, which highlights as the drop target](docs/editor-drag.png)
+
+Drag a window to another screen and it moves for real, immediately — the rule
+that keeps it there is written when you press Enter. With icons instead of live
+content, each terminal says what it is: its working directory and the command
+running in it.
+
+![The application picker, open over the editor, adding an app to a named screen](docs/editor-add-app.png)
+
+`+` on a screen adds an application to it. One that is already open moves to
+where you asked for it instead of starting a second copy.
+
 ## Status
 
 Early. The command line is tested and stable and works on any Hyprland.
