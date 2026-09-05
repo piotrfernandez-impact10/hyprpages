@@ -51,7 +51,6 @@ Rectangle {
 
   signal contextRequested(real globalX, real globalY)
   signal dragFinished()
-  signal addRequested()
   signal closeRequested()
 
   // True while the left button is dragging this tile. The canvas watches it to
@@ -108,80 +107,66 @@ Rectangle {
     }
   }
 
-  // Per-window controls: always present, always the same size, always the same
-  // corner. A control that only appears on hover, or that grows with its tile,
-  // has to be hunted for; these are in one place on every window so the hand
-  // learns where they are.
+  // Always present, always the same size, always the same corner. A control
+  // that only appears on hover, or that grows with its tile, has to be hunted
+  // for; this one is in one place on every window so the hand learns it.
   readonly property real controlSize: 18
   // Nothing to close without a window address - a tile drawn from stale state,
   // or one the compositor did not give an address for. The button stays in
-  // place so the row never shifts, but says it cannot act.
+  // place and says it cannot act, rather than vanishing.
   readonly property bool canClose: !!(entry && entry.address)
 
-  Row {
-    id: controls
-    // Hidden only when the tile genuinely cannot hold them, and while dragging,
-    // where they would be a target moving under the cursor.
+  // Close, in every tile, in the same corner. Only the one control: it acts on
+  // the window it sits in, which is the whole rule for controls here - adding
+  // is a property of a screen, so its `+` lives on the screen.
+  //
+  // The opposite corner from the screen's `+` on purpose: a maximised window
+  // covers its screen, and two buttons in one corner would be a coin toss.
+  Rectangle {
+    id: closeButton
+    // Hidden only when the tile genuinely cannot hold it, and while dragging,
+    // where it would be a target moving under the cursor.
     visible: !card.dragging
-             && card.width > card.controlSize * 2 + 12
+             && card.width > card.controlSize + 8
              && card.height > card.controlSize + 8
     anchors.top: parent.top
     anchors.right: parent.right
     anchors.margins: 4
-    spacing: 4
     z: 5
 
-    Repeater {
-      model: [
-        { glyph: "+", tip: "open an app beside this one", action: "add" },
-        { glyph: "−", tip: "close this window", action: "close" }
-      ]
+    width: card.controlSize
+    height: card.controlSize
+    radius: width / 2
 
-      Rectangle {
-        id: control
-        required property var modelData
+    // Shown in place rather than hidden when there is nothing to close, so the
+    // corner does not change shape from tile to tile.
+    readonly property bool disabled: !card.canClose
 
-        width: card.controlSize
-        height: card.controlSize
-        radius: width / 2
-        color: buttonHover.hovered
-          ? (control.modelData.action === "close" ? "#a55555" : card.foreground)
-          : Qt.rgba(0, 0, 0, 0.45)
-        border.width: 1
-        border.color: buttonHover.hovered
-          ? (control.modelData.action === "close" ? "#a55555" : card.foreground)
-          : card.outline
+    color: buttonHover.hovered ? "#a55555" : Qt.rgba(0, 0, 0, 0.45)
+    border.width: 1
+    border.color: buttonHover.hovered ? "#a55555" : card.outline
+    opacity: closeButton.disabled ? 0.3 : (buttonHover.hovered ? 1 : 0.75)
 
-        readonly property bool disabled:
-          control.modelData.action === "close" && !card.canClose
+    Behavior on color { ColorAnimation { duration: 90 } }
+    HoverHandler {
+      id: buttonHover
+      enabled: !closeButton.disabled
+    }
 
-        opacity: control.disabled ? 0.3 : (buttonHover.hovered ? 1 : 0.75)
+    Text {
+      anchors.centerIn: parent
+      text: "−"
+      color: buttonHover.hovered ? card.surface : card.foreground
+      font.family: card.fontFamily
+      font.pixelSize: closeButton.width * 0.6
+      font.bold: true
+    }
 
-        Behavior on color { ColorAnimation { duration: 90 } }
-        HoverHandler {
-          id: buttonHover
-          enabled: !control.disabled
-        }
-
-        Text {
-          anchors.centerIn: parent
-          text: control.modelData.glyph
-          color: buttonHover.hovered ? card.surface : card.foreground
-          font.family: card.fontFamily
-          font.pixelSize: control.width * 0.6
-          font.bold: true
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          enabled: !control.disabled
-          cursorShape: control.disabled ? Qt.ArrowCursor : Qt.PointingHandCursor
-          onClicked: {
-            if (control.modelData.action === "add") card.addRequested()
-            else card.closeRequested()
-          }
-        }
-      }
+    MouseArea {
+      anchors.fill: parent
+      enabled: !closeButton.disabled
+      cursorShape: closeButton.disabled ? Qt.ArrowCursor : Qt.PointingHandCursor
+      onClicked: card.closeRequested()
     }
   }
 

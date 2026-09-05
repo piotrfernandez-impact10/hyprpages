@@ -399,8 +399,8 @@ Item {
     root.dirty = true
   }
 
-  // "Add something here". The editor stays open and offers the choice in
-  // place: being thrown at a workspace to pick an app loses the context you
+  // "Add something to this screen". The editor stays open and offers the choice
+  // in place: being thrown at a workspace to pick an app loses the context you
   // were arranging, which is the whole point of the editor.
   property bool pickerOpen: false
   property string pickerMonitor: ""
@@ -408,13 +408,8 @@ Item {
   property int pickerIndex: 0
   property var apps: []
 
-  // `near` is a window address: the new app opens beside that window rather
-  // than wherever the layout would otherwise drop it.
-  property string pickerNear: ""
-
-  function addTo(page, monitor, near) {
+  function addTo(page, monitor) {
     if (!monitor) return
-    root.pickerNear = near || ""
     root.pickerMonitor = monitor
     root.pickerFilter = ""
     root.pickerIndex = 0
@@ -487,11 +482,9 @@ Item {
       return
     }
 
-    var args = [root.cli, "launch", app.id,
-                "--page", String(root.currentPage),
-                "--monitor", root.pickerMonitor]
-    if (root.pickerNear) args = args.concat(["--near", root.pickerNear])
-    launchProcess.command = args
+    launchProcess.command = [root.cli, "launch", app.id,
+                             "--page", String(root.currentPage),
+                             "--monitor", root.pickerMonitor]
     launchProcess.running = true
     root.closePicker()
   }
@@ -1200,8 +1193,6 @@ Item {
                 toplevel: root.config.live_view === true
                   ? root.toplevelFor(tile.modelData) : null
                 onContextRequested: function (gx, gy) { root.openMenu(tile.modelData, gx, gy) }
-                onAddRequested: root.addTo(root.currentPage, tile.modelData.onMonitor,
-                                           tile.modelData.address)
                 onCloseRequested: root.askClose(tile.modelData)
 
                 // Live preview while dragging, and the drop itself on release.
@@ -1230,9 +1221,14 @@ Item {
               }
             }
 
-            // Add buttons, above the windows so a maximised one cannot bury
-            // them. Their own repeater rather than a child of each screen,
-            // because a screen sits below every window in draw order.
+            // One add button per screen, which is where adding belongs: the
+            // question it answers is "what goes on this screen", and an empty
+            // screen has no window to hang it off.
+            //
+            // Above the windows so a maximised one cannot bury them, in their
+            // own repeater rather than as a child of each screen, because a
+            // screen sits below every window in draw order. Bottom corner,
+            // opposite the close button that sits at the top of every tile.
             Repeater {
               model: root.monitors
 
@@ -1266,7 +1262,7 @@ Item {
 
                 MouseArea {
                   anchors.fill: parent
-                  onClicked: root.addTo(root.currentPage, addButton.modelData.name, "")
+                  onClicked: root.addTo(root.currentPage, addButton.modelData.name)
                 }
               }
             }

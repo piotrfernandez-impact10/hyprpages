@@ -14,8 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Per-app "keep windows together": new windows of an app join the ones already
   open, following the group when it moves.
 - Visual editor: the desktop drawn to scale, drag windows between screens with
-  a snap preview, right-click to send a window to another page or screen, and a
-  `+` on each screen that picks an application to open there.
+  a snap preview, right-click to send a window to another page or screen, a `+`
+  on each screen that picks an application to open there, and a `−` on each
+  window that closes it.
 - Classic `hyprland.conf` output alongside the Lua output, chosen automatically
   from whether a `hyprland.lua` exists.
 - `hyprpages page N` switches every screen to one page, which is how the conf
@@ -23,6 +24,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Application icons resolved from desktop entries, falling back to the window's
   process when its class is a user invention.
 - `--version`.
+
+### Changed
+- One control per thing: `+` belongs to a screen, `−` belongs to a window. The
+  `+` inside each window tile is gone -- it only differed in tiling the new
+  window beside that one, which a single drag fixes, and it cost a button in
+  every tile.
 
 ### Fixed
 - Picking an application that is already open moved its window to the chosen

@@ -313,12 +313,9 @@ def cmd_launch(args) -> int:
             print(f"moved {cls} to workspace {workspace}")
             return 0
 
-    if args.near:
-        # Focus the window the user pointed at, so the new one tiles beside it
-        # rather than wherever the layout would otherwise have put it.
-        hypr.focus_window(args.near)
-    else:
-        hypr.focus_workspace(args.monitor, workspace)
+    # Focus first, then launch: a new window opens on the focused workspace, so
+    # this needs no cooperation from the application or from Hyprland rules.
+    hypr.focus_workspace(args.monitor, workspace)
     entry = args.desktop_id.removesuffix(".desktop")
 
     launcher = _launch_command(entry)
@@ -517,11 +514,6 @@ def main(argv: list[str] | None = None) -> int:
     launch_parser.add_argument("desktop_id", help="desktop entry id, e.g. spotify.desktop")
     launch_parser.add_argument("--page", type=int, required=True)
     launch_parser.add_argument("--monitor", required=True)
-    launch_parser.add_argument(
-        "--near",
-        default="",
-        help="focus this window first (0x...), so the new one opens beside it",
-    )
     launch_parser.add_argument(
         "--new",
         action="store_true",
