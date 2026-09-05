@@ -73,7 +73,8 @@ externally managed (PEP 668).
 
 ```bash
 hyprpages state            # what is running right now, as JSON
-hyprpages capture          # adopt the current layout as your configuration
+hyprpages capture          # fold what is running into your configuration
+hyprpages capture --dry-run # ...or just show what that would change
 hyprpages apply --dry-run  # show the config that would be written
 hyprpages apply            # write it and reload Hyprland
 hyprpages page 3           # switch every screen to page 3

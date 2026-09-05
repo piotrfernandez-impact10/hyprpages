@@ -162,6 +162,15 @@ def kitty_windows() -> dict[str, dict]:
     return out
 
 
+def process_name(pid: int) -> str:
+    """The command actually running behind a window.
+
+    A window class is whatever the application chose to call itself, and some
+    choose nothing useful; the process name is the fallback.
+    """
+    return _comm(pid)
+
+
 # -------------------------------------------------------------------- browser
 
 
@@ -207,6 +216,8 @@ def describe(window: dict, kitty_cache: dict[str, dict], tabs: list | None) -> d
         if tabs is not None:
             detail = {"tabs": tabs}
 
+    entry, entry_is_exact = desktop.entry_match(cls, comm)
+
     return {
         "class": cls,
         # Identifies this window rather than its class, so a drag can move the
@@ -217,6 +228,13 @@ def describe(window: dict, kitty_cache: dict[str, dict], tabs: list | None) -> d
         # the configuration, which stores class patterns and nothing else.
         "title": window.get("title", ""),
         "icon": desktop.icon_for(cls, comm),
+        # Which installed application this window is, so the editor can tell
+        # that the app you just picked is already open somewhere. `Exact` says
+        # the class named that application outright rather than being resolved
+        # through a fallback, which is the difference between Steam and a game
+        # started by Steam.
+        "desktopId": entry,
+        "desktopExact": entry_is_exact,
         "kind": kind,
         "workspace": window.get("workspace", {}).get("name", ""),
         "floating": window.get("floating", False),

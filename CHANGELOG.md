@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `hyprpages launch --new` to start another instance of an application that is
+  already open, rather than moving the one that exists.
 - Linked screens are a toggle: pages can move every monitor together, or leave
   each switching on its own.
 - Per-app "keep windows together": new windows of an app join the ones already
@@ -23,6 +25,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--version`.
 
 ### Fixed
+- Picking an application that is already open moved its window to the chosen
+  page. It used to launch a second copy, which single-instance applications
+  answer by raising the window they already have, on the page it was already
+  on -- so the picker appeared to do nothing.
+- `capture` merges into the configuration instead of replacing it. It can only
+  see open windows, so rebuilding from scratch silently deleted the rules for
+  everything that happened to be closed. `--replace` asks for the old
+  behaviour, and `--dry-run` shows the result without writing it.
+- `capture` no longer invents a rule for a class that is open on several pages
+  at once -- the usual state of a terminal, and the rule dragged every terminal
+  to one page ever after. It reports them instead.
 - The editor's Apply never reached the CLI: stdin was written before the
   process started, so `apply --stdin` blocked on a pipe that was never written.
 - "Keep windows together" matched nothing for any hyphenated class

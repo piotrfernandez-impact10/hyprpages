@@ -46,6 +46,42 @@ def _entry_fields(text: str) -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
+def _entries() -> list[tuple[str, str, dict[str, str]]]:
+    """(stem, id, fields) for every installed entry, deduped the XDG way.
+
+    A user's own ~/.local/share entry replaces the packaged one of the same
+    name outright, rather than the two being merged key by key.
+    """
+    seen: dict[str, tuple[str, str, dict[str, str]]] = {}
+    for root in data_dirs():
+        directory = root / "applications"
+        if not directory.is_dir():
+            continue
+        for entry in sorted(directory.glob("*.desktop")):
+            if entry.stem in seen:
+                continue  # a more specific directory already provided it
+            try:
+                fields = _entry_fields(entry.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            seen[entry.stem] = (entry.stem, entry.name, fields)
+    return list(seen.values())
+
+
+def _launchable(fields: dict[str, str]) -> bool:
+    """Whether a person could start this entry.
+
+    NoDisplay and Hidden entries are infrastructure - mime handlers, session
+    pieces - and an entry that is not an Application cannot be started at all.
+    """
+    return (
+        fields.get("Type", "Application") == "Application"
+        and fields.get("NoDisplay", "").lower() != "true"
+        and fields.get("Hidden", "").lower() != "true"
+    )
+
+
+@lru_cache(maxsize=1)
 def icon_index() -> tuple[dict[str, str], dict[str, str]]:
     """(by StartupWMClass, by entry stem) -> icon name.
 
@@ -54,39 +90,52 @@ def icon_index() -> tuple[dict[str, str], dict[str, str]]:
     """
     by_class: dict[str, str] = {}
     by_stem: dict[str, str] = {}
-    for root in data_dirs():
-        directory = root / "applications"
-        if not directory.is_dir():
+    for stem, _id, fields in _entries():
+        icon = fields.get("Icon")
+        if not icon:
             continue
-        for entry in sorted(directory.glob("*.desktop")):
-            try:
-                fields = _entry_fields(entry.read_text(encoding="utf-8", errors="replace"))
-            except OSError:
-                continue
-            icon = fields.get("Icon")
-            if not icon:
-                continue
-            wm_class = fields.get("StartupWMClass")
-            if wm_class:
-                by_class.setdefault(wm_class.lower(), icon)
-            by_stem.setdefault(entry.stem.lower(), icon)
+        wm_class = fields.get("StartupWMClass")
+        if wm_class:
+            by_class.setdefault(wm_class.lower(), icon)
+        by_stem.setdefault(stem.lower(), icon)
     return by_class, by_stem
 
 
-def icon_for(window_class: str, process: str = "") -> str:
-    """Best icon name for a window class, or "" when nothing plausible matches.
+@lru_cache(maxsize=1)
+def entry_index() -> tuple[dict[str, str], dict[str, str]]:
+    """(by StartupWMClass, by entry stem) -> desktop entry id.
 
-    `process` is the window's own process name, used only when the class leads
-    nowhere: a class is whatever the user chose (`kitty --class restore-terms`),
-    while the process is what is actually running.
-
-    Returning a name rather than a path keeps theme resolution in the UI, which
-    already knows the icon theme and can fall back on its own.
+    The same shape as icon_index, over the entries a person can actually start:
+    the answer is used to decide "the app you picked is that window over
+    there", so an entry the picker never offers would be a useless match.
     """
-    if not window_class and not process:
-        return ""
+    by_class: dict[str, str] = {}
+    by_stem: dict[str, str] = {}
+    for stem, entry_id, fields in _entries():
+        if not _launchable(fields):
+            continue
+        wm_class = fields.get("StartupWMClass")
+        if wm_class:
+            by_class.setdefault(wm_class.lower(), entry_id)
+        by_stem.setdefault(stem.lower(), entry_id)
+    return by_class, by_stem
 
-    by_class, by_stem = icon_index()
+
+def clear_cache() -> None:
+    """Forget the scanned entries, after something is installed or removed."""
+    _entries.cache_clear()
+    icon_index.cache_clear()
+    entry_index.cache_clear()
+
+
+def _resolve(
+    window_class: str, process: str, by_class: dict[str, str], by_stem: dict[str, str]
+) -> str:
+    """Walk a window class down to whatever an index knows about it.
+
+    One ladder, used for both icons and entry ids, so the two can never
+    disagree about which application a window belongs to.
+    """
     lowered = window_class.lower()
 
     if lowered in by_class:
@@ -95,7 +144,7 @@ def icon_for(window_class: str, process: str = "") -> str:
         return by_stem[lowered]
 
     # Chrome web apps: chrome-web.whatsapp.com__-Default. The class encodes the
-    # site, not an application, so the browser's icon is the honest answer.
+    # site, not an application, so the browser is the honest answer.
     if lowered.startswith("chrome-"):
         for candidate in ("google-chrome", "chromium"):
             if candidate in by_stem:
@@ -123,38 +172,60 @@ def icon_for(window_class: str, process: str = "") -> str:
     return ""
 
 
-def applications() -> list[dict]:
-    """Launchable desktop entries, sorted by name.
+def icon_for(window_class: str, process: str = "") -> str:
+    """Best icon name for a window class, or "" when nothing plausible matches.
 
-    Filtered the way a launcher must be: entries marked NoDisplay or Hidden are
-    infrastructure (mime handlers, session pieces) rather than things a person
-    starts, and an entry that is not an Application cannot be launched at all.
+    `process` is the window's own process name, used only when the class leads
+    nowhere: a class is whatever the user chose (`kitty --class restore-terms`),
+    while the process is what is actually running.
+
+    Returning a name rather than a path keeps theme resolution in the UI, which
+    already knows the icon theme and can fall back on its own.
     """
-    seen: dict[str, dict] = {}
-    for root in data_dirs():
-        directory = root / "applications"
-        if not directory.is_dir():
+    if not window_class and not process:
+        return ""
+    return _resolve(window_class, process, *icon_index())
+
+
+def entry_match(window_class: str, process: str = "") -> tuple[str, bool]:
+    """(desktop entry id, whether the class named it outright).
+
+    Lets the editor answer "is the app you just picked already open?", so
+    choosing a running application moves its window instead of asking it to
+    start again - which single-instance applications answer by raising the
+    window they already have, wherever it happens to be.
+
+    The second half matters because the fallbacks are deliberately generous:
+    `steam_app_1234` resolving to Steam is the right icon and the wrong window
+    to drag across pages. An exact match is preferred wherever one exists.
+    """
+    if not window_class and not process:
+        return "", False
+    by_class, by_stem = entry_index()
+    entry = _resolve(window_class, process, by_class, by_stem)
+    lowered = window_class.lower()
+    exact = bool(entry) and entry in (by_class.get(lowered), by_stem.get(lowered))
+    return entry, exact
+
+
+def entry_for(window_class: str, process: str = "") -> str:
+    """The desktop entry id a window belongs to, e.g. "spotify.desktop"."""
+    return entry_match(window_class, process)[0]
+
+
+def applications() -> list[dict]:
+    """Launchable desktop entries, sorted by name."""
+    out = []
+    for _stem, entry_id, fields in _entries():
+        name = fields.get("Name")
+        if not name or not _launchable(fields):
             continue
-        for entry in sorted(directory.glob("*.desktop")):
-            if entry.stem in seen:
-                continue  # a more specific directory already provided it
-            try:
-                fields = _entry_fields(entry.read_text(encoding="utf-8", errors="replace"))
-            except OSError:
-                continue
-            if fields.get("Type", "Application") != "Application":
-                continue
-            if fields.get("NoDisplay", "").lower() == "true":
-                continue
-            if fields.get("Hidden", "").lower() == "true":
-                continue
-            name = fields.get("Name")
-            if not name:
-                continue
-            seen[entry.stem] = {
-                "id": entry.name,
+        out.append(
+            {
+                "id": entry_id,
                 "name": name,
                 "icon": fields.get("Icon", ""),
                 "comment": fields.get("Comment", ""),
             }
-    return sorted(seen.values(), key=lambda a: a["name"].lower())
+        )
+    return sorted(out, key=lambda a: a["name"].lower())

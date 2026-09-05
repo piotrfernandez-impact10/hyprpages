@@ -33,9 +33,9 @@ def fake_applications(tmp_path, monkeypatch):
         (apps / name).write_text(body)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setenv("XDG_DATA_DIRS", str(tmp_path))
-    desktop.icon_index.cache_clear()
+    desktop.clear_cache()
     yield
-    desktop.icon_index.cache_clear()
+    desktop.clear_cache()
 
 
 class TestIconFor:

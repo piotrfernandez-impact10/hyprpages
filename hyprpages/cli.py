@@ -96,8 +96,19 @@ def cmd_state(_args) -> int:
     return 0
 
 
-def cmd_capture(_args) -> int:
-    """Turn the current desktop into config: every window becomes a rule."""
+def cmd_capture(args) -> int:
+    """Fold the running desktop into the configuration.
+
+    Merged, not replaced. Capture can only see what is open, and most of what a
+    configuration describes is closed at any moment - so rebuilding from
+    scratch quietly deletes the rules for everything that happens not to be
+    running. --replace asks for that deliberately.
+
+    A class open on two pages at once cannot be written as one rule, so it is
+    reported and left alone rather than pinned to whichever window hyprctl
+    listed first. That is the usual state of a terminal, and inventing a rule
+    from it drags every terminal to one page ever after.
+    """
     state = build_state()
     cfg = PagesConfig.load()
     if not cfg.monitors:
@@ -106,26 +117,62 @@ def cmd_capture(_args) -> int:
         # desktop pins its first band to the right-hand screen.
         cfg.monitors = infer_monitor_order(state["monitors"], cfg.offset)
 
-    seen: set[str] = set()
-    apps: list[App] = []
+    live: dict[str, list[dict]] = {}
     for window in state["windows"]:
-        cls = window["class"]
-        if not cls or cls in seen or window["page"] is None:
+        if window["class"] and window["page"] is not None:
+            live.setdefault(window["class"], []).append(window)
+
+    kept = [] if args.replace else list(cfg.apps)
+    by_pattern = {app.pattern: app for app in kept}
+
+    added: list[str] = []
+    updated: list[str] = []
+    ambiguous: list[str] = []
+
+    for cls, windows in sorted(live.items()):
+        spots = {(w["page"], w["monitor"]) for w in windows}
+        if len(spots) > 1:
+            pages = ", ".join(str(page) for page, _ in sorted(spots))
+            ambiguous.append(f"{cls} (pages {pages})")
             continue
-        seen.add(cls)
-        apps.append(
-            App(
-                pattern=class_to_pattern(cls),
-                page=window["page"],
-                monitor=window["monitor"],
-                float=window["floating"],
-                size=" ".join(str(int(n)) for n in window["size"]) if window["floating"] else "",
-                label=cls,
-            )
-        )
-    cfg.apps = apps
-    cfg.save()
-    print(f"captured {len(apps)} apps across {len(state['monitors'])} monitors")
+
+        window = windows[0]
+        size = " ".join(str(int(n)) for n in window["size"]) if window["floating"] else ""
+        pattern = class_to_pattern(cls)
+        app = by_pattern.get(pattern)
+        if app is None:
+            app = App(pattern=pattern, page=window["page"], monitor=window["monitor"], label=cls)
+            by_pattern[pattern] = app
+            kept.append(app)
+            added.append(cls)
+        else:
+            was = (app.page, app.monitor, app.float, app.size)
+            if was != (window["page"], window["monitor"], window["floating"], size):
+                updated.append(cls)
+            app.page = window["page"]
+            app.monitor = window["monitor"]
+        # Never touched: `together` and `label`, which say what the user meant
+        # and cannot be read back off a running window.
+        app.float = window["floating"]
+        app.size = size
+
+    untouched = len(kept) - len(added) - len(updated)
+    summary = (
+        f"{len(added)} new, {len(updated)} updated, {untouched} unchanged"
+        f" - {len(kept)} rules across {len(state['monitors'])} monitors"
+    )
+    if args.dry_run:
+        for app in kept:
+            where = f"page {app.page}" + (f" on {app.monitor}" if app.monitor else "")
+            print(f"{app.pattern}  ->  {where}")
+        print(f"# {summary} (nothing written)")
+    else:
+        cfg.apps = kept
+        cfg.save()
+        print(f"captured {summary}")
+
+    for entry in ambiguous:
+        print(f"skipped {entry}: open on more than one page, no single rule fits", file=sys.stderr)
     return 0
 
 
@@ -236,12 +283,16 @@ def cmd_apps(_args) -> int:
 
 
 def cmd_launch(args) -> int:
-    """Start an application on a given page and screen.
+    """Put an application on a page: move the one that is open, or start one.
 
-    Focus first, then launch: a new window opens on the focused workspace, so
-    this needs no cooperation from the application or from Hyprland rules.
-    Launched through uwsm-app so it joins the session scope like anything
-    started from Omarchy's own launcher.
+    Starting is the wrong answer for an application that is already running.
+    Most of them are single-instance, so a second launch is answered by raising
+    the window they already have - on the workspace it was already on. From the
+    editor that looks like nothing happening at all, which is why "add Spotify
+    here" moves the Spotify that exists instead.
+
+    An instance already on the target page means "here" is satisfied, so a
+    second window is what was actually being asked for. --new forces that.
     """
     cfg = PagesConfig.load()
     if not cfg.monitors:
@@ -251,6 +302,16 @@ def cmd_launch(args) -> int:
     if workspace is None:
         print(f"no workspace for page {args.page} on {args.monitor}", file=sys.stderr)
         return 1
+
+    if not args.new:
+        existing = _open_elsewhere(args.desktop_id, workspace)
+        if existing:
+            hypr.move_to_workspace(existing["address"], workspace)
+            hypr.focus_workspace(args.monitor, workspace)
+            hypr.focus_window(existing["address"])
+            cls = existing.get("initialClass") or existing.get("class") or ""
+            print(f"moved {cls} to workspace {workspace}")
+            return 0
 
     if args.near:
         # Focus the window the user pointed at, so the new one tiles beside it
@@ -273,6 +334,36 @@ def cmd_launch(args) -> int:
     )
     print(f"launched {entry} on workspace {workspace}")
     return 0
+
+
+def _open_elsewhere(desktop_id: str, workspace: int) -> dict | None:
+    """A window of this application that is not already on `workspace`.
+
+    None when the application has nothing open, or when it already has a window
+    where it was asked to go - in both cases what is wanted is a new one.
+
+    Of several candidates a window whose class names the application outright
+    beats one resolved through a fallback, and then the most recently focused
+    wins: with three browser windows scattered around, the one being thought of
+    is the one last used.
+    """
+    if not desktop_id:
+        return None
+
+    away: list[tuple[bool, int, dict]] = []
+    for client in hypr.query("clients") or []:
+        cls = client.get("initialClass") or client.get("class") or ""
+        # Resolved exactly as the editor resolves it for the same window, so
+        # the two can never disagree about what is already open.
+        entry, exact = desktop.entry_match(cls, capture.process_name(client.get("pid", 0)))
+        if entry != desktop_id:
+            continue
+        if client.get("workspace", {}).get("name") == str(workspace):
+            return None
+        # focusHistoryID counts up from 0 at the focused window.
+        away.append((not exact, client.get("focusHistoryID", 1 << 30), client))
+
+    return min(away, key=lambda item: item[:2])[2] if away else None
 
 
 def _launch_command(entry: str) -> list[str] | None:
@@ -396,9 +487,18 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("state", help="print the current desktop as JSON").set_defaults(func=cmd_state)
-    sub.add_parser("capture", help="save the current layout as the configuration").set_defaults(
-        func=cmd_capture
+    capture_parser = sub.add_parser(
+        "capture", help="fold the running windows into the configuration"
     )
+    capture_parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="start from nothing, dropping the rules for everything not running",
+    )
+    capture_parser.add_argument(
+        "--dry-run", action="store_true", help="print the rules instead of saving them"
+    )
+    capture_parser.set_defaults(func=cmd_capture)
 
     move_parser = sub.add_parser("move", help="move a class's live windows to a page")
     move_parser.add_argument("window_class", help="exact window class to move")
@@ -421,6 +521,11 @@ def main(argv: list[str] | None = None) -> int:
         "--near",
         default="",
         help="focus this window first (0x...), so the new one opens beside it",
+    )
+    launch_parser.add_argument(
+        "--new",
+        action="store_true",
+        help="always start another instance, instead of moving one that is open",
     )
     launch_parser.set_defaults(func=cmd_launch)
 

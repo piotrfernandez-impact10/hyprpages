@@ -451,10 +451,42 @@ Item {
     })
   }
 
+  // A window of this application that is open somewhere other than the spot
+  // being added to. Null when it has none, or already has one here - both mean
+  // "start another", which is what asking for it here would have meant.
+  function openElsewhere(desktopId, page, monitor) {
+    if (!desktopId) return null
+    var best = null
+    for (var i = 0; i < root.windows.length; i++) {
+      var w = root.windows[i]
+      if (w.desktopId !== desktopId) continue
+      if (w.page === page && w.onMonitor === monitor) return null
+      // A class that names the application outright beats one matched through
+      // a fallback: picking Steam must not drag a game Steam started.
+      if (!best || (w.desktopExact && !best.desktopExact)) best = w
+    }
+    return best
+  }
+
   function launchPicked() {
     var list = root.filteredApps()
     if (!list.length) return
     var app = list[Math.max(0, Math.min(root.pickerIndex, list.length - 1))]
+
+    // Already running elsewhere: move it here rather than asking it to start
+    // again. A single-instance application answers a second launch by raising
+    // the window it already has, on the page it was already on, so the picker
+    // appeared to do nothing at all.
+    var existing = root.openElsewhere(app.id, root.currentPage, root.pickerMonitor)
+    if (existing) {
+      root.place(existing.class, root.currentPage, root.pickerMonitor, existing.floating,
+                 existing.size && existing.size.length === 2
+                   ? existing.size[0] + " " + existing.size[1] : "")
+      root.moveLive(existing.class, root.currentPage, root.pickerMonitor, existing.address)
+      root.closePicker()
+      return
+    }
+
     var args = [root.cli, "launch", app.id,
                 "--page", String(root.currentPage),
                 "--monitor", root.pickerMonitor]
