@@ -27,6 +27,12 @@ Drag a window and the screen it will land on lights up. Let go and it moves for
 real, immediately — the rule that keeps it there is written when you press
 Enter.
 
+![The same page with icons instead of live content, each terminal captioned with its directory and command](docs/editor-icon-view.png)
+
+Icons instead, when you want the labels rather than the picture. Each terminal
+says where it is and what is running in it; a browser says how many tabs it has
+open.
+
 ![The application picker, open over the editor, adding an app to a named screen](docs/editor-add-app.png)
 
 `+` on a screen adds an application to it. One that is already open moves to
