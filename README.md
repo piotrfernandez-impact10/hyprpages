@@ -21,12 +21,11 @@ Both monitors of one page, drawn to scale. **Live view** fills each tile with
 the window's real content, so you recognise the desktop you are editing rather
 than reading a list of class names.
 
-![Dragging a floating window onto the left-hand screen, which highlights as the drop target](docs/editor-drag.png)
+![Dragging a floating window, with the screen it will land on highlighted](docs/editor-drag.png)
 
-Drag a window to another screen and it moves for real, immediately — the rule
-that keeps it there is written when you press Enter. With icons instead of live
-content, each terminal says what it is: its working directory and the command
-running in it.
+Drag a window and the screen it will land on lights up. Let go and it moves for
+real, immediately — the rule that keeps it there is written when you press
+Enter.
 
 ![The application picker, open over the editor, adding an app to a named screen](docs/editor-add-app.png)
 
