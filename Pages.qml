@@ -1507,7 +1507,11 @@ Item {
             // is going. Above the drop preview, below the tile being carried.
             Canvas {
               id: swapArrow
-              z: 22
+              // Above the tile being carried, unlike the drop preview beneath
+              // it: the arrow is thin lines rather than a filled label, so it
+              // reads over the tile instead of burying it, and a swap you
+              // cannot see explains nothing.
+              z: 26
               anchors.fill: parent
               visible: canvas.swapTarget !== "" && canvas.swapFrom && canvas.swapTo
 
@@ -1584,21 +1588,21 @@ Item {
               border.color: root.selectedText
               opacity: 0.9
 
-              // A swap needs saying, because the preview alone reads as "it
-              // lands here" and leaves out that something is coming back the
-              // other way. The arrows sit at the edge, clear of the dragged
-              // tile riding over the middle.
-              Text {
-                visible: canvas.swapTarget !== ""
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: Style.spacing.xs
-                text: "⇄  swap"
-                color: root.selectedText
-                font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.bodySmall
-                font.bold: true
-              }
+            }
+
+            // The word, in the same layer as the arrow rather than inside the
+            // preview, so the tile riding over the middle cannot bury it.
+            Text {
+              z: 26
+              visible: canvas.swapTarget !== "" && canvas.snap !== null
+              x: canvas.snap ? canvas.snap.x + (canvas.snap.width - width) / 2 : 0
+              y: canvas.snap ? canvas.snap.y + canvas.snap.height - height
+                               - Style.spacing.xs : 0
+              text: "⇄  swap"
+              color: root.selectedText
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.bodySmall
+              font.bold: true
             }
           }
 
