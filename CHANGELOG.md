@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Keyboard hints**: every tile carries a letter, always, rather than behind a
+  mode you enter first. Press one to take hold of a window, then a page number
+  to send it there or an arrow key for the other screen; any other key lets go.
+  `v`, `l` and `r` are kept out of the alphabet — they already mean live view,
+  link screens and refresh.
+- **Drag to swap**: dropping a tile on another window on the same screen trades
+  their places. Position inside a screen belongs to the layout, so trading is
+  the only rearrangement a tiler offers — a same-screen drag used to do nothing
+  at all. Previewed in the slot the window will land in, with a two-headed
+  arrow between the two and the partner outlined; it moves live windows and
+  records no rule, because no rule can express it.
+- `hyprpages swap <address> <address>` behind it.
 - Per-app **"keep it on every page"**: the app follows you instead of living on
   one page — a video call, a player, a monitoring window. Hyprland only pins
   floating windows, so the generated rule floats it too rather than emitting a
@@ -43,6 +55,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every tile.
 
 ### Fixed
+- The editor opens on the page you are on. `activePage()` ran before the config
+  from the same response had been read, so it fell back to physical
+  left-to-right monitor order instead of the configured one — on the first open
+  after a shell restart that computed the wrong page and landed on page 1.
+- Adding an application that is already open now depends on whether it can have
+  more than one window. An entry shipping a "new window" action is saying it
+  can, so "add Chrome here" opens another window; one shipping none cannot, so
+  "add Spotify here" still means the Spotify that exists. Chrome's action Exec
+  is the bare binary, identical to its main one, and running that again only
+  raises the window it already has — so when the action adds nothing, the
+  window is asked for explicitly with `--new-window`.
 - Picking an application that is already open moved its window to the chosen
   page. It used to launch a second copy, which single-instance applications
   answer by raising the window they already have, on the page it was already

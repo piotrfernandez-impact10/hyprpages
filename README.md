@@ -60,6 +60,9 @@ Hyprland the CLI still does everything except the dragging.
 - **Moves real windows**, not just rules, so an edit has an effect immediately
 - **Keeps an app with you** — pin one to every page, for the call or the player
   you want in front of you whichever page you are on
+- **Works without a mouse** — every window carries a letter; press it, then a
+  page number, and it goes there
+- **Swaps two windows** — drop one on another to trade their places
 
 ## Requirements
 
