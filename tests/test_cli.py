@@ -504,3 +504,34 @@ class TestLaunchMovesWhatIsOpen:
             monkeypatch, ["launch", "steam.desktop", "--page", "3", "--monitor", "A"]
         )
         assert moved == [("0xSTEAM", 3)]
+
+
+class TestSwap:
+    """Two windows trade places. Position inside a screen belongs to the
+    layout, so this is the only rearrangement a tiler offers."""
+
+    CLIENTS: ClassVar[list[dict]] = [
+        {"address": "0xAAA"},
+        {"address": "0xBBB"},
+    ]
+
+    def _run(self, monkeypatch, argv):
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: self.CLIENTS)
+        swapped = []
+        monkeypatch.setattr(cli.hypr, "swap_windows", lambda a, b: swapped.append((a, b)))
+        return cli.main(argv), swapped
+
+    def test_swaps_two_known_windows(self, monkeypatch):
+        code, swapped = self._run(monkeypatch, ["swap", "0xAAA", "0xBBB"])
+        assert (code, swapped) == (0, [("0xAAA", "0xBBB")])
+
+    def test_refuses_an_address_no_window_has(self, monkeypatch, capsys):
+        """Dispatching at an unknown address is a silent no-op, and a drag that
+        appears to do nothing is the worst outcome the editor can produce."""
+        code, swapped = self._run(monkeypatch, ["swap", "0xAAA", "0xZZZ"])
+        assert (code, swapped) == (1, [])
+        assert "no window with address" in capsys.readouterr().err
+
+    def test_swapping_a_window_with_itself_does_nothing(self, monkeypatch):
+        code, swapped = self._run(monkeypatch, ["swap", "0xAAA", "0xAAA"])
+        assert (code, swapped) == (0, [])

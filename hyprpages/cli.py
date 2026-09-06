@@ -218,6 +218,26 @@ def cmd_move(args) -> int:
     return 0
 
 
+def cmd_swap(args) -> int:
+    """Trade two windows' places on screen.
+
+    Both addresses are checked first: dispatching at an address no window has
+    is a silent no-op, and a drag that appears to do nothing is the worst
+    outcome the editor can produce.
+    """
+    known = {client.get("address") for client in (hypr.query("clients") or [])}
+    for address in (args.first, args.second):
+        if address not in known:
+            print(f"no window with address {address}", file=sys.stderr)
+            return 1
+    if args.first == args.second:
+        return 0
+
+    hypr.swap_windows(args.first, args.second)
+    print(f"swapped {args.first} and {args.second}")
+    return 0
+
+
 def cmd_focus(args) -> int:
     """Make a page's workspace on one screen the focused one.
 
@@ -529,6 +549,11 @@ def main(argv: list[str] | None = None) -> int:
     set_parser.add_argument("name", choices=sorted(SETTINGS))
     set_parser.add_argument("value")
     set_parser.set_defaults(func=cmd_set)
+
+    swap_parser = sub.add_parser("swap", help="trade two windows' places on screen")
+    swap_parser.add_argument("first", help="window address, e.g. 0x55...")
+    swap_parser.add_argument("second", help="window address, e.g. 0x55...")
+    swap_parser.set_defaults(func=cmd_swap)
 
     close_parser = sub.add_parser("close", help="ask one window to close")
     close_parser.add_argument("address", help="window address, e.g. 0x55...")

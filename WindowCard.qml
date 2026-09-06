@@ -26,6 +26,10 @@ Rectangle {
   // Its windows are set to stay on one workspace together.
   property bool grouped: false
   property bool pinned: false
+  // The letter that selects this window from the keyboard, and whether it is
+  // the one currently held.
+  property string hint: ""
+  property bool held: false
   // Live view: the window's own content instead of its icon. `toplevel` is the
   // Wayland handle the capture reads from, matched by the parent; null when no
   // unambiguous match was found, in which case the icon stands in.
@@ -63,11 +67,11 @@ Rectangle {
   // window gets a small box, exactly as on screen.
   clip: true
   radius: radiusPx
-  color: dragArea.drag.active ? Qt.lighter(surface, 1.35)
+  color: dragArea.drag.active || card.held ? Qt.lighter(surface, 1.35)
        : hoverArea.hovered ? Qt.lighter(surface, 1.15)
        : surface
-  border.width: 1
-  border.color: dragArea.drag.active ? foreground : outline
+  border.width: card.held ? 2 : 1
+  border.color: dragArea.drag.active || card.held ? foreground : outline
   // Lifted while dragging, so it reads as picked up rather than sliding.
   scale: dragArea.drag.active ? 1.03 : 1
   opacity: dragArea.drag.active ? 0.85 : 1
@@ -116,6 +120,39 @@ Rectangle {
   // or one the compositor did not give an address for. The button stays in
   // place and says it cannot act, rather than vanishing.
   readonly property bool canClose: !!(entry && entry.address)
+
+  // The keyboard hint, top-left: the opposite corner from close, so the two
+  // never fight for the same spot on a small tile. Always drawn rather than
+  // behind a mode, because a letter you can see is one you do not have to know.
+  Rectangle {
+    id: hintBadge
+    visible: card.hint !== "" && !card.dragging
+             && card.width > card.controlSize * 2 + 12
+             && card.height > card.controlSize + 8
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.margins: 4
+    z: 5
+
+    width: card.controlSize
+    height: card.controlSize
+    radius: 4
+    color: card.held ? card.foreground : Qt.rgba(0, 0, 0, 0.45)
+    border.width: 1
+    border.color: card.held ? card.foreground : card.outline
+    opacity: card.held ? 1 : 0.75
+
+    Behavior on color { ColorAnimation { duration: 90 } }
+
+    Text {
+      anchors.centerIn: parent
+      text: card.hint.toUpperCase()
+      color: card.held ? card.surface : card.foreground
+      font.family: card.fontFamily
+      font.pixelSize: hintBadge.width * 0.6
+      font.bold: true
+    }
+  }
 
   // Close, in every tile, in the same corner. Only the one control: it acts on
   // the window it sits in, which is the whole rule for controls here - adding

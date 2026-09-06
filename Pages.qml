@@ -91,8 +91,14 @@ Item {
 
   function close() {
     root.opened = false
+    root.heldHint = ""
     root.stopWork()
   }
+
+  // A hint letter means the Nth window of the page being looked at, so holding
+  // one across a page change would point at a different window. Let go instead.
+  onCurrentPageChanged: root.heldHint = ""
+  onWindowsChanged: root.heldHint = ""
 
   // Nothing may run while the editor is hidden: no subprocesses, no pending
   // state, no half-finished edit waiting to be applied by a later keystroke.
@@ -447,6 +453,57 @@ Item {
     root.dirty = true
   }
 
+  // Keyboard hints. Every tile carries a letter, always, rather than behind a
+  // mode you have to enter first: the letters are the labels, so there is
+  // nothing to discover and nothing to remember. Press one to take hold of
+  // that window, then a page number to send it there.
+  //
+  // v, l and r are missing on purpose - they already mean live view, link
+  // screens and refresh, and a letter that does two things depending on
+  // invisible state is worse than a shorter alphabet.
+  readonly property string hintKeys: "asdfghjkqwetyuiopzxcnmb"
+  property string heldHint: ""
+
+  // Sending a held window to a page keeps it on the screen it is already on;
+  // moving between screens is its own gesture.
+  readonly property string heldMonitor: {
+    var entry = root.entryForHint(root.heldHint)
+    return entry ? (entry.onMonitor || "") : ""
+  }
+
+  function hintFor(index) {
+    return index < root.hintKeys.length ? root.hintKeys.charAt(index) : ""
+  }
+
+  // The window a hint letter stands for, on the page being looked at.
+  function entryForHint(letter) {
+    var list = root.windowsOnPage(root.currentPage)
+    var index = root.hintKeys.indexOf(letter)
+    return (index >= 0 && index < list.length) ? list[index] : null
+  }
+
+  // Send the held window to a page, exactly as dragging it there would.
+  function sendHeldTo(page, monitor) {
+    var entry = root.entryForHint(root.heldHint)
+    root.heldHint = ""
+    if (!entry || !monitor) return
+    root.place(entry.class, page, monitor, entry.floating,
+               entry.size && entry.size.length === 2
+                 ? entry.size[0] + " " + entry.size[1] : "")
+    root.moveLive(entry.class, page, monitor, entry.address)
+  }
+
+  // The screen one step along from the held window's, wrapping round. With two
+  // screens either direction is "the other one", which is the common case.
+  function heldToScreen(step) {
+    var entry = root.entryForHint(root.heldHint)
+    if (!entry) { root.heldHint = ""; return }
+    var names = root.monitorNames()
+    var at = names.indexOf(entry.onMonitor)
+    if (at < 0 || names.length < 2) { root.heldHint = ""; return }
+    root.sendHeldTo(root.currentPage, names[(at + step + names.length) % names.length])
+  }
+
   // "Add something to this screen". The editor stays open and offers the choice
   // in place: being thrown at a workspace to pick an app loses the context you
   // were arranging, which is the whole point of the editor.
@@ -537,6 +594,16 @@ Item {
     root.closePicker()
   }
 
+  // Trade two windows' places. Position inside a screen is the layout's to
+  // decide and no rule can express it, so this moves the live windows and
+  // records nothing - unlike a move between screens, it does not survive a
+  // restart, and saying otherwise would be a lie.
+  function swapLive(first, second) {
+    if (!root.opened || !first || !second || first === second) return
+    swapProcess.command = [root.cli, "swap", first, second]
+    swapProcess.running = true
+  }
+
   // Move the live windows of a class, so a drag has a visible effect at once.
   // The rule it also records is what makes the placement stick next time.
   // `address` moves just that window; without it every window of the class
@@ -574,17 +641,22 @@ Item {
           root.monitors = parsed.monitors || []
           root.windows = parsed.windows || []
 
-          if (root.followActivePage) {
-            root.followActivePage = false
-            var active = root.activePage()
-            if (active > 0) root.currentPage = active
-          }
           // Unsaved edits win: a refresh fires after every move, launch and
           // `r`, and taking the on-disk config back would quietly undo what the
           // user just did while the header still read "unsaved".
           if (!root.dirty) {
             root.config = parsed.config || root.config
             if (root.config.apps === undefined) root.config.apps = []
+          }
+
+          // After the config, never before: working out which page is on screen
+          // needs the configured monitor order and offset. Reading it first
+          // fell back to physical left-to-right order, so on the first open
+          // after a shell restart the editor opened on the wrong page.
+          if (root.followActivePage) {
+            root.followActivePage = false
+            var active = root.activePage()
+            if (active > 0) root.currentPage = active
           }
         } catch (e) {
           root.error = "could not read desktop state: " + e
@@ -662,6 +734,19 @@ Item {
     id: refreshAfterLaunch
     interval: 900
     onTriggered: root.refresh()
+  }
+
+  Process {
+    id: swapProcess
+    stdout: StdioCollector {
+      onStreamFinished: root.refresh()   // redraw from reality, not assumption
+    }
+    stderr: StdioCollector {
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.error = message
+      }
+    }
   }
 
   Process {
@@ -798,6 +883,26 @@ Item {
             return
           }
 
+          // A held window turns the number keys from "look at page N" into
+          // "send it to page N": the same keys, reading as one sentence.
+          if (root.heldHint) {
+            if (event.key === Qt.Key_Escape) {
+              root.heldHint = ""
+            } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+              root.sendHeldTo(event.key - Qt.Key_0, root.heldMonitor)
+            } else if (event.key === Qt.Key_0) {
+              root.sendHeldTo(10, root.heldMonitor)
+            } else if (event.key === Qt.Key_Left || event.key === Qt.Key_BracketLeft) {
+              root.heldToScreen(-1)
+            } else if (event.key === Qt.Key_Right || event.key === Qt.Key_BracketRight) {
+              root.heldToScreen(1)
+            } else {
+              root.heldHint = ""  // any other key lets go, rather than trapping you
+            }
+            event.accepted = true
+            return
+          }
+
           if (event.key === Qt.Key_Escape) {
             root.dismiss()
             event.accepted = true
@@ -809,6 +914,9 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_0) {
             root.currentPage = 10
+            event.accepted = true
+          } else if (event.text && root.entryForHint(event.text.toLowerCase())) {
+            root.heldHint = event.text.toLowerCase()
             event.accepted = true
           } else if (event.key === Qt.Key_R) {
             root.refresh()
@@ -1108,6 +1216,21 @@ Item {
 
             // Hit-test the tile's centre rather than the pointer: dragging by a
             // corner should still target the screen the tile is mostly over.
+            // The window under a point on the canvas, ignoring one address so a
+            // dragged tile never finds itself. Last first, matching draw order.
+            function windowAt(x, y, skipAddress) {
+              var list = root.windowsOnPage(root.currentPage)
+              for (var i = list.length - 1; i >= 0; i--) {
+                var w = list[i]
+                if (!w.address || w.address === skipAddress) continue
+                var screen = root.monitorByName(w.onMonitor)
+                if (!screen || !w.at || w.at.length !== 2) continue
+                var r = canvas.windowRect(w, screen)
+                if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) return w
+              }
+              return null
+            }
+
             function updateSnap(tile) {
               var cx = tile.x + tile.width / 2
               var cy = tile.y + tile.height / 2
@@ -1211,6 +1334,7 @@ Item {
               WindowCard {
                 id: tile
                 required property var modelData
+                required property int index
                 // Windows sit inside their screen; the one being dragged rises
                 // above everything, including the drop preview, so the hand
                 // never loses the thing it is carrying.
@@ -1242,6 +1366,8 @@ Item {
                   var rule = root.ruleFor(tile.modelData.class)
                   return !!(rule && rule.pin)
                 }
+                hint: root.hintFor(tile.index)
+                held: root.heldHint !== "" && root.heldHint === root.hintFor(tile.index)
                 iconSource: tile.modelData.icon
                   ? Quickshell.iconPath(tile.modelData.icon, true) : ""
                 liveView: root.config.live_view === true && root.opened
@@ -1256,12 +1382,22 @@ Item {
                 onDraggingChanged: if (tile.dragging) canvas.updateSnap(tile)
                 onDragFinished: {
                   if (canvas.snap && canvas.snap.monitor !== tile.modelData.onMonitor) {
+                    // Another screen: the window moves there, and the rule that
+                    // puts it there next time is recorded with it.
                     root.place(tile.modelData.class, root.currentPage, canvas.snap.monitor,
                                tile.modelData.floating,
                                tile.modelData.size && tile.modelData.size.length === 2
                                  ? tile.modelData.size[0] + " " + tile.modelData.size[1] : "")
                     root.moveLive(tile.modelData.class, root.currentPage,
                                   canvas.snap.monitor, tile.modelData.address)
+                  } else if (canvas.snap) {
+                    // Same screen: the layout owns the positions, so there is no
+                    // "put it here" - dropping on another window trades places
+                    // with it, which is the only rearrangement a tiler offers.
+                    var onto = canvas.windowAt(tile.x + tile.width / 2,
+                                               tile.y + tile.height / 2,
+                                               tile.modelData.address)
+                    if (onto) root.swapLive(tile.modelData.address, onto.address)
                   }
                   canvas.snap = null
                 }
@@ -1348,9 +1484,12 @@ Item {
 
           Text {
             Layout.fillWidth: true
-            text: "+ adds an app here   ·   drag a window between screens   ·   right-click for options   "
-                  + "·   1-0 page   ·   L link screens   ·   V live view   ·   R refresh   "
-                  + "·   Enter apply   ·   Esc close"
+            text: root.heldHint
+              ? "holding " + root.heldHint.toUpperCase()
+                + "   ·   1-0 send it to that page   ·   ← → other screen   ·   Esc let go"
+              : "letter picks a window   ·   drag to swap or change screen   ·   right-click for options   "
+                + "·   1-0 page   ·   L link screens   ·   V live view   ·   R refresh   "
+                + "·   Enter apply   ·   Esc close"
             color: root.mutedText
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.caption

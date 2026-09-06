@@ -130,6 +130,19 @@ def move_to_workspace(address: str, workspace: int, follow: bool = False) -> Non
     )
 
 
+def swap_windows(first: str, second: str) -> None:
+    """Exchange two windows' tiled positions.
+
+    The layout decides where a window sits, so there is no "put it here" for a
+    tile - the only way to rearrange one screen is to trade places with the
+    window already in the spot you want.
+    """
+    _hyprctl(
+        "dispatch",
+        f"hl.dsp.window.swap({{ window = 'address:{first}', target = 'address:{second}' }})",
+    )
+
+
 def focus_workspace(monitor: str, workspace: int) -> None:
     """Bring a workspace up on a given monitor and leave focus there.
 
