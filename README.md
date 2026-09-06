@@ -38,6 +38,10 @@ open.
 `+` on a screen adds an application to it. One that is already open moves to
 where you asked for it instead of starting a second copy.
 
+*These shots are from an earlier build and may be behind: the editor picks up
+features faster than they get re-photographed. What they show is still true;
+there is simply more of it now.*
+
 ## Status
 
 Early. The command line is tested and stable and works on any Hyprland.
