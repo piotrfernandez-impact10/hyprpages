@@ -30,6 +30,8 @@ Rectangle {
   // the one currently held.
   property string hint: ""
   property bool held: false
+  // True while a drag is hovering this window and would trade places with it.
+  property bool swapping: false
   // Live view: the window's own content instead of its icon. `toplevel` is the
   // Wayland handle the capture reads from, matched by the parent; null when no
   // unambiguous match was found, in which case the icon stands in.
@@ -68,10 +70,12 @@ Rectangle {
   clip: true
   radius: radiusPx
   color: dragArea.drag.active || card.held ? Qt.lighter(surface, 1.35)
-       : hoverArea.hovered ? Qt.lighter(surface, 1.15)
+       : card.swapping || hoverArea.hovered ? Qt.lighter(surface, 1.15)
        : surface
-  border.width: card.held ? 2 : 1
-  border.color: dragArea.drag.active || card.held ? foreground : outline
+  border.width: card.held || card.swapping ? 2 : 1
+  border.color: dragArea.drag.active || card.held || card.swapping ? foreground : outline
+
+  Behavior on border.width { NumberAnimation { duration: 90 } }
   // Lifted while dragging, so it reads as picked up rather than sliding.
   scale: dragArea.drag.active ? 1.03 : 1
   opacity: dragArea.drag.active ? 0.85 : 1

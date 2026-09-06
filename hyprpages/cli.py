@@ -327,7 +327,13 @@ def cmd_launch(args) -> int:
         print(f"no workspace for page {args.page} on {args.monitor}", file=sys.stderr)
         return 1
 
-    if not args.new:
+    # An application that ships a "new window" action is telling you it can
+    # have several at once, so "add Chrome here" means another window - not the
+    # one you are already using somewhere else. One that ships none cannot, and
+    # for those "add it here" can only mean the window that exists.
+    another = desktop.new_window_command(args.desktop_id)
+
+    if not args.new and not another:
         existing = _open_elsewhere(args.desktop_id, workspace)
         if existing:
             hypr.move_to_workspace(existing["address"], workspace)
@@ -342,7 +348,11 @@ def cmd_launch(args) -> int:
     hypr.focus_workspace(args.monitor, workspace)
     entry = args.desktop_id.removesuffix(".desktop")
 
-    launcher = _launch_command(entry)
+    launcher: list[str] | None
+    if another and not args.new:
+        launcher = ["uwsm-app", "--", *another] if shutil.which("uwsm-app") else another
+    else:
+        launcher = _launch_command(entry)
     if launcher is None:
         print("no way to launch desktop entries: install gtk-launch or gio", file=sys.stderr)
         return 1

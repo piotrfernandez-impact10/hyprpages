@@ -45,14 +45,46 @@ def _entry_fields(text: str) -> dict[str, str]:
     return fields
 
 
+def _new_window_exec(text: str) -> str:
+    """The Exec of an entry's "new window" action, or "".
+
+    An application that ships one is telling you it can have several windows at
+    once. That is the difference between "add Chrome here", which should open
+    another window, and "add Spotify here", which cannot and means the one that
+    already exists.
+
+    Its own Exec is needed rather than launching the entry again: asking a
+    running single-instance browser to start just raises the window it has.
+    """
+    action = ""
+    exec_line = ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            name = line[1:-1].strip()
+            prefix = "Desktop Action "
+            action = name[len(prefix) :].strip() if name.startswith(prefix) else ""
+            exec_line = ""
+            continue
+        if not action or "=" not in line or line.startswith("#"):
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() == "Exec" and not exec_line:
+            exec_line = value.strip()
+            lowered = action.lower()
+            if "new" in lowered and "window" in lowered and "private" not in lowered:
+                return exec_line
+    return ""
+
+
 @lru_cache(maxsize=1)
-def _entries() -> list[tuple[str, str, dict[str, str]]]:
+def _entries() -> list[tuple[str, str, dict[str, str], str]]:
     """(stem, id, fields) for every installed entry, deduped the XDG way.
 
     A user's own ~/.local/share entry replaces the packaged one of the same
     name outright, rather than the two being merged key by key.
     """
-    seen: dict[str, tuple[str, str, dict[str, str]]] = {}
+    seen: dict[str, tuple[str, str, dict[str, str], str]] = {}
     for root in data_dirs():
         directory = root / "applications"
         if not directory.is_dir():
@@ -61,10 +93,10 @@ def _entries() -> list[tuple[str, str, dict[str, str]]]:
             if entry.stem in seen:
                 continue  # a more specific directory already provided it
             try:
-                fields = _entry_fields(entry.read_text(encoding="utf-8", errors="replace"))
+                text = entry.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            seen[entry.stem] = (entry.stem, entry.name, fields)
+            seen[entry.stem] = (entry.stem, entry.name, _entry_fields(text), _new_window_exec(text))
     return list(seen.values())
 
 
@@ -90,7 +122,7 @@ def icon_index() -> tuple[dict[str, str], dict[str, str]]:
     """
     by_class: dict[str, str] = {}
     by_stem: dict[str, str] = {}
-    for stem, _id, fields in _entries():
+    for stem, _id, fields, _new in _entries():
         icon = fields.get("Icon")
         if not icon:
             continue
@@ -111,7 +143,7 @@ def entry_index() -> tuple[dict[str, str], dict[str, str]]:
     """
     by_class: dict[str, str] = {}
     by_stem: dict[str, str] = {}
-    for stem, entry_id, fields in _entries():
+    for stem, entry_id, fields, _new in _entries():
         if not _launchable(fields):
             continue
         wm_class = fields.get("StartupWMClass")
@@ -187,6 +219,33 @@ def icon_for(window_class: str, process: str = "") -> str:
     return _resolve(window_class, process, *icon_index())
 
 
+def new_window_command(desktop_id: str) -> list[str]:
+    """How to open another window of an application, or [] if it cannot.
+
+    Field codes (%U, %f, ...) are dropped: they stand for the files being
+    opened, and there are none.
+    """
+    import shlex
+
+    for _stem, entry_id, fields, new_window in _entries():
+        if entry_id != desktop_id or not new_window:
+            continue
+        try:
+            parts = [p for p in shlex.split(new_window) if not (len(p) == 2 and p.startswith("%"))]
+            main = shlex.split(fields.get("Exec", ""))
+        except ValueError:
+            return []
+        # Chrome's new-window action is the bare binary, identical to its main
+        # Exec - and running that again only raises the window it already has,
+        # which is the "it flashed and nothing happened" case. When the action
+        # adds nothing, ask for the window explicitly. Browsers, which is who
+        # ships this shape, all take --new-window.
+        if parts and main and parts[0] == main[0] and len(parts) == 1:
+            parts.append("--new-window")
+        return parts
+    return []
+
+
 def entry_match(window_class: str, process: str = "") -> tuple[str, bool]:
     """(desktop entry id, whether the class named it outright).
 
@@ -216,7 +275,7 @@ def entry_for(window_class: str, process: str = "") -> str:
 def applications() -> list[dict]:
     """Launchable desktop entries, sorted by name."""
     out = []
-    for _stem, entry_id, fields in _entries():
+    for _stem, entry_id, fields, new_window in _entries():
         name = fields.get("Name")
         if not name or not _launchable(fields):
             continue
@@ -226,6 +285,8 @@ def applications() -> list[dict]:
                 "name": name,
                 "icon": fields.get("Icon", ""),
                 "comment": fields.get("Comment", ""),
+                # Can this application have more than one window at a time?
+                "newWindow": bool(new_window),
             }
         )
     return sorted(out, key=lambda a: a["name"].lower())

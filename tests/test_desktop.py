@@ -14,14 +14,26 @@ ENTRIES = {
     "kitty.desktop": "[Desktop Entry]\nName=kitty\nIcon=kitty\n",
     "google-chrome.desktop": (
         "[Desktop Entry]\nName=Google Chrome\nIcon=google-chrome\n"
-        "StartupWMClass=Google-chrome\n"
+        "StartupWMClass=Google-chrome\nExec=/usr/bin/google-chrome-stable %U\n"
+        "Actions=new-window;\n"
         "\n[Desktop Action new-window]\nName=New Window\nIcon=chrome-action-icon\n"
+        "Exec=/usr/bin/google-chrome-stable\n"
     ),
     "org.qbittorrent.qBittorrent.desktop": (
         "[Desktop Entry]\nName=qBittorrent\nIcon=qbittorrent\n"
     ),
     "steam.desktop": "[Desktop Entry]\nName=Steam\nIcon=steam\n",
     "noicon.desktop": "[Desktop Entry]\nName=Nothing\n",
+    "onlyprivate.desktop": (
+        "[Desktop Entry]\nName=Private Only\nIcon=p\nExec=/usr/bin/p\n"
+        "Actions=new-private-window;\n"
+        "\n[Desktop Action new-private-window]\nName=New Incognito\nExec=/usr/bin/p --incognito\n"
+    ),
+    "withcodes.desktop": (
+        "[Desktop Entry]\nName=Thing\nIcon=t\nExec=/usr/bin/thing %U\n"
+        "Actions=new-window;\n"
+        "\n[Desktop Action new-window]\nName=New Window\nExec=/usr/bin/thing --new-window %U\n"
+    ),
 }
 
 
@@ -99,3 +111,32 @@ class TestIndexCaching:
     def test_index_is_cached_between_calls(self):
         first = desktop.icon_index()
         assert desktop.icon_index() is first
+
+
+class TestNewWindow:
+    """An application that ships a "new window" action can have several at
+    once. That is the difference between "add Chrome here", which means another
+    window, and "add Spotify here", which can only mean the one that exists."""
+
+    def test_an_entry_without_the_action_says_so(self):
+        assert desktop.new_window_command("kitty.desktop") == []
+
+    def test_an_action_that_adds_nothing_asks_for_a_window_explicitly(self):
+        """Chrome's action Exec is the bare binary, identical to its main one --
+        running that again only raises the window it already has."""
+        assert desktop.new_window_command("google-chrome.desktop") == [
+            "/usr/bin/google-chrome-stable",
+            "--new-window",
+        ]
+
+    def test_a_private_window_action_is_not_a_new_window(self):
+        assert desktop.new_window_command("onlyprivate.desktop") == []
+
+    def test_field_codes_are_dropped(self):
+        """%U stands for the files being opened, and there are none."""
+        assert desktop.new_window_command("withcodes.desktop") == ["/usr/bin/thing", "--new-window"]
+
+    def test_applications_carry_the_flag(self):
+        entries = {a["id"]: a for a in desktop.applications()}
+        assert entries["google-chrome.desktop"]["newWindow"] is True
+        assert entries["kitty.desktop"]["newWindow"] is False

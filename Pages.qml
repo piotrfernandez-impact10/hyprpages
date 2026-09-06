@@ -577,7 +577,11 @@ Item {
     // again. A single-instance application answers a second launch by raising
     // the window it already has, on the page it was already on, so the picker
     // appeared to do nothing at all.
-    var existing = root.openElsewhere(app.id, root.currentPage, root.pickerMonitor)
+    // Only for an application that can have one window at a time. Chrome can
+    // have many, so "add it here" means a new one rather than dragging the
+    // window you are using on another page over to this one.
+    var existing = app.newWindow
+      ? null : root.openElsewhere(app.id, root.currentPage, root.pickerMonitor)
     if (existing) {
       root.place(existing.class, root.currentPage, root.pickerMonitor, existing.floating,
                  existing.size && existing.size.length === 2
@@ -1218,6 +1222,10 @@ Item {
             // corner should still target the screen the tile is mostly over.
             // The window under a point on the canvas, ignoring one address so a
             // dragged tile never finds itself. Last first, matching draw order.
+            // The window a same-screen drop would trade places with, by
+            // address, or "" when the drop is an ordinary move.
+            property string swapTarget: ""
+
             function windowAt(x, y, skipAddress) {
               var list = root.windowsOnPage(root.currentPage)
               for (var i = list.length - 1; i >= 0; i--) {
@@ -1237,8 +1245,23 @@ Item {
               var screen = canvas.screenAt(cx, cy)
               if (!screen) {
                 canvas.snap = null
+                canvas.swapTarget = ""
                 return
               }
+
+              // Over another window on the window's own screen, the drop is a
+              // swap. Preview it where it will actually end up - the other
+              // window's slot - rather than as a free-floating box, which is a
+              // shape a tiling layout would never give it.
+              var onto = (screen.name === tile.modelData.onMonitor)
+                ? canvas.windowAt(cx, cy, tile.modelData.address) : null
+              canvas.swapTarget = onto ? onto.address : ""
+              if (onto) {
+                canvas.snap = Object.assign({ monitor: screen.name },
+                                            canvas.windowRect(onto, screen))
+                return
+              }
+
               var r = canvas.screenRect(screen)
               var pad = canvas.inset
               // Clamped inside the target screen, so the preview always shows a
@@ -1366,6 +1389,8 @@ Item {
                   var rule = root.ruleFor(tile.modelData.class)
                   return !!(rule && rule.pin)
                 }
+                swapping: canvas.swapTarget !== ""
+                          && canvas.swapTarget === tile.modelData.address
                 hint: root.hintFor(tile.index)
                 held: root.heldHint !== "" && root.heldHint === root.hintFor(tile.index)
                 iconSource: tile.modelData.icon
@@ -1400,6 +1425,7 @@ Item {
                     if (onto) root.swapLive(tile.modelData.address, onto.address)
                   }
                   canvas.snap = null
+                  canvas.swapTarget = ""
                 }
                 foreground: root.foreground
                 surface: root.windowFill
@@ -1462,6 +1488,7 @@ Item {
             // flight. Above the other tiles so a maximised window cannot bury
             // it, below the tile being dragged.
             Rectangle {
+              id: snapGhost
               z: 20
               visible: canvas.snap !== null
               x: canvas.snap ? canvas.snap.x : 0
@@ -1473,9 +1500,22 @@ Item {
               border.width: 2
               border.color: root.selectedText
               opacity: 0.9
-              // No label: the target screen already lights up and its name
-              // plate turns with it, and a name centred here landed under the
-              // cursor - on top of the dragged window's own name.
+
+              // A swap needs saying, because the preview alone reads as "it
+              // lands here" and leaves out that something is coming back the
+              // other way. The arrows sit at the edge, clear of the dragged
+              // tile riding over the middle.
+              Text {
+                visible: canvas.swapTarget !== ""
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Style.spacing.xs
+                text: "⇄  swap"
+                color: root.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+              }
             }
           }
 
