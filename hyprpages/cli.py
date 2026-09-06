@@ -12,6 +12,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from . import __version__, capture, desktop, hypr
@@ -333,7 +334,7 @@ def cmd_launch(args) -> int:
     # for those "add it here" can only mean the window that exists.
     another = desktop.new_window_command(args.desktop_id)
 
-    if not args.new and not another:
+    if not args.new and not desktop.is_multi_window(args.desktop_id):
         existing = _open_elsewhere(args.desktop_id, workspace)
         if existing:
             hypr.move_to_workspace(existing["address"], workspace)
@@ -357,14 +358,40 @@ def cmd_launch(args) -> int:
         print("no way to launch desktop entries: install gtk-launch or gio", file=sys.stderr)
         return 1
 
+    before = {client.get("address") for client in (hypr.query("clients") or [])}
     subprocess.Popen(
         launcher,
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    print(f"launched {entry} on workspace {workspace}")
+
+    landed = _settle_on(workspace, before)
+    where = f"workspace {workspace}" if landed else f"workspace {workspace} (window not seen yet)"
+    print(f"launched {entry} on {where}")
     return 0
+
+
+def _settle_on(workspace: int, before: set[str | None], timeout: float = 6.0) -> bool:
+    """Wait for the window that just opened and put it where it was asked for.
+
+    Focusing the target workspace is not enough on its own: a placement rule
+    for the same application wins over the focused workspace, so "add Chrome to
+    page 6" opened a new window on whichever page Chrome's own rule names. The
+    rule is right about where Chrome opens by default and wrong about what was
+    just asked for, so the window is moved once it exists.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(0.25)
+        for client in hypr.query("clients") or []:
+            address = client.get("address")
+            if address in before or not address:
+                continue
+            if client.get("workspace", {}).get("name") != str(workspace):
+                hypr.move_to_workspace(address, workspace)
+            return True
+    return False
 
 
 def _open_elsewhere(desktop_id: str, workspace: int) -> dict | None:

@@ -465,6 +465,20 @@ class TestLaunchMovesWhatIsOpen:
         assert moved == []
         assert len(started) == 1
 
+    def test_a_new_window_is_moved_to_the_page_that_was_asked_for(self, monkeypatch):
+        """A placement rule for the same application beats the focused
+        workspace, so a new window opens on whichever page the rule names."""
+        opened = {"address": "0xNEW", "workspace": {"name": "12"}}
+        clients = [dict(c) for c in self.CLIENTS]
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: clients)
+        monkeypatch.setattr(cli.time, "sleep", lambda _s: clients.append(opened))
+        monkeypatch.setattr(cli.time, "monotonic", lambda: 0.0)
+        moved, _, started = self._run(
+            monkeypatch, ["launch", "vlc.desktop", "--page", "6", "--monitor", "A"]
+        )
+        assert len(started) == 1
+        assert moved == [("0xNEW", 6)]
+
     def test_new_always_starts_another(self, monkeypatch):
         moved, _, started = self._run(
             monkeypatch, ["launch", "spotify.desktop", "--page", "3", "--monitor", "A", "--new"]

@@ -55,14 +55,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every tile.
 
 ### Fixed
+- A newly launched window lands on the page it was asked for. Focusing the
+  target workspace is not enough on its own: a placement rule for the same
+  application beats the focused workspace, so "add Chrome to page 6" opened a
+  new window on whichever page Chrome's own rule named.
 - The editor opens on the page you are on. `activePage()` ran before the config
   from the same response had been read, so it fell back to physical
   left-to-right monitor order instead of the configured one — on the first open
   after a shell restart that computed the wrong page and landed on page 1.
 - Adding an application that is already open now depends on whether it can have
   more than one window. An entry shipping a "new window" action is saying it
-  can, so "add Chrome here" opens another window; one shipping none cannot, so
-  "add Spotify here" still means the Spotify that exists. Chrome's action Exec
+  can, so "add Chrome here" opens another window; a terminal emulator counts
+  too, since foot and kitty ship no actions at all. One that is neither cannot,
+  so "add Spotify here" still means the Spotify that exists. Chrome's action Exec
   is the bare binary, identical to its main one, and running that again only
   raises the window it already has — so when the action adds nothing, the
   window is asked for explicitly with `--new-window`.

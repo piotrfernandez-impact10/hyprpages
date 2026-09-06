@@ -29,6 +29,10 @@ ENTRIES = {
         "Actions=new-private-window;\n"
         "\n[Desktop Action new-private-window]\nName=New Incognito\nExec=/usr/bin/p --incognito\n"
     ),
+    "term.desktop": (
+        "[Desktop Entry]\nName=Term\nIcon=t\nExec=/usr/bin/term\n"
+        "Categories=System;TerminalEmulator;\n"
+    ),
     "withcodes.desktop": (
         "[Desktop Entry]\nName=Thing\nIcon=t\nExec=/usr/bin/thing %U\n"
         "Actions=new-window;\n"
@@ -136,7 +140,18 @@ class TestNewWindow:
         """%U stands for the files being opened, and there are none."""
         assert desktop.new_window_command("withcodes.desktop") == ["/usr/bin/thing", "--new-window"]
 
+    def test_a_terminal_counts_even_without_an_action(self):
+        """foot and kitty ship no actions at all, and opening a second terminal
+        is the most ordinary thing on the desktop."""
+        assert desktop.is_multi_window("term.desktop") is True
+        assert desktop.new_window_command("term.desktop") == []
+
+    def test_an_ordinary_app_is_assumed_single_window(self):
+        assert desktop.is_multi_window("kitty.desktop") is False
+        assert desktop.is_multi_window("google-chrome.desktop") is True
+
     def test_applications_carry_the_flag(self):
         entries = {a["id"]: a for a in desktop.applications()}
         assert entries["google-chrome.desktop"]["newWindow"] is True
         assert entries["kitty.desktop"]["newWindow"] is False
+        assert entries["term.desktop"]["newWindow"] is True

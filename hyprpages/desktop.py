@@ -219,6 +219,29 @@ def icon_for(window_class: str, process: str = "") -> str:
     return _resolve(window_class, process, *icon_index())
 
 
+def is_multi_window(desktop_id: str) -> bool:
+    """Whether this application can have several windows at once.
+
+    Two signals, both from the entry itself. A "new window" action says so
+    outright. A terminal emulator does not bother to declare one -- foot and
+    kitty ship no actions at all -- but opening a second terminal is the most
+    ordinary thing on the desktop, so the standard TerminalEmulator category
+    counts too.
+
+    Everything else is assumed single-window, which is the safe way round: the
+    cost of being wrong is that "add it here" moves the window you have instead
+    of opening another, and the window is still where you asked for it.
+    """
+    for _stem, entry_id, fields, new_window in _entries():
+        if entry_id != desktop_id:
+            continue
+        if new_window:
+            return True
+        categories = fields.get("Categories", "").split(";")
+        return "TerminalEmulator" in categories
+    return False
+
+
 def new_window_command(desktop_id: str) -> list[str]:
     """How to open another window of an application, or [] if it cannot.
 
@@ -286,7 +309,8 @@ def applications() -> list[dict]:
                 "icon": fields.get("Icon", ""),
                 "comment": fields.get("Comment", ""),
                 # Can this application have more than one window at a time?
-                "newWindow": bool(new_window),
+                "newWindow": bool(new_window)
+                or "TerminalEmulator" in fields.get("Categories", "").split(";"),
             }
         )
     return sorted(out, key=lambda a: a["name"].lower())
