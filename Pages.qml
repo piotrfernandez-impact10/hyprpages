@@ -1225,6 +1225,9 @@ Item {
             // The window a same-screen drop would trade places with, by
             // address, or "" when the drop is an ordinary move.
             property string swapTarget: ""
+            // The two slots being traded, in canvas coordinates.
+            property var swapFrom: null
+            property var swapTo: null
 
             function windowAt(x, y, skipAddress) {
               var list = root.windowsOnPage(root.currentPage)
@@ -1246,6 +1249,8 @@ Item {
               if (!screen) {
                 canvas.snap = null
                 canvas.swapTarget = ""
+                canvas.swapFrom = null
+                canvas.swapTo = null
                 return
               }
 
@@ -1255,12 +1260,23 @@ Item {
               // shape a tiling layout would never give it.
               var onto = (screen.name === tile.modelData.onMonitor)
                 ? canvas.windowAt(cx, cy, tile.modelData.address) : null
-              canvas.swapTarget = onto ? onto.address : ""
               if (onto) {
-                canvas.snap = Object.assign({ monitor: screen.name },
-                                            canvas.windowRect(onto, screen))
+                // Both slots, so the arrow can say what actually happens: this
+                // window goes there, and that one comes back here. Rebuilt only
+                // when the target changes, not on every frame of the drag - the
+                // arrow does not move while it points at the same window.
+                if (canvas.swapTarget !== onto.address) {
+                  canvas.swapTarget = onto.address
+                  canvas.swapFrom = { x: tile.homeX, y: tile.homeY,
+                                      width: tile.width, height: tile.height }
+                  canvas.swapTo = canvas.windowRect(onto, screen)
+                }
+                canvas.snap = Object.assign({ monitor: screen.name }, canvas.swapTo)
                 return
               }
+              canvas.swapTarget = ""
+              canvas.swapFrom = null
+              canvas.swapTo = null
 
               var r = canvas.screenRect(screen)
               var pad = canvas.inset
@@ -1426,6 +1442,8 @@ Item {
                   }
                   canvas.snap = null
                   canvas.swapTarget = ""
+                  canvas.swapFrom = null
+                  canvas.swapTo = null
                 }
                 foreground: root.foreground
                 surface: root.windowFill
@@ -1481,6 +1499,71 @@ Item {
                   anchors.fill: parent
                   onClicked: root.addTo(root.currentPage, addButton.modelData.name)
                 }
+              }
+            }
+
+            // A line between the two slots with a head at each end: the shape
+            // of the exchange, drawn between where the window is and where it
+            // is going. Above the drop preview, below the tile being carried.
+            Canvas {
+              id: swapArrow
+              z: 22
+              anchors.fill: parent
+              visible: canvas.swapTarget !== "" && canvas.swapFrom && canvas.swapTo
+
+              readonly property var from: canvas.swapFrom
+              readonly property var to: canvas.swapTo
+              onFromChanged: swapArrow.requestPaint()
+              onToChanged: swapArrow.requestPaint()
+              onVisibleChanged: swapArrow.requestPaint()
+
+              onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                if (!swapArrow.from || !swapArrow.to) return
+
+                var ax = swapArrow.from.x + swapArrow.from.width / 2
+                var ay = swapArrow.from.y + swapArrow.from.height / 2
+                var bx = swapArrow.to.x + swapArrow.to.width / 2
+                var by = swapArrow.to.y + swapArrow.to.height / 2
+
+                var dx = bx - ax, dy = by - ay
+                var len = Math.sqrt(dx * dx + dy * dy)
+                if (len < 24) return  // too close together to read as an arrow
+                var ux = dx / len, uy = dy / len
+
+                // Stop short of both centres so the heads sit in open space
+                // rather than under the icons they point at.
+                var trim = Math.min(len / 2 - 6, 26)
+                ax += ux * trim; ay += uy * trim
+                bx -= ux * trim; by -= uy * trim
+
+                ctx.strokeStyle = root.selectedText
+                ctx.fillStyle = root.selectedText
+                ctx.lineWidth = 2
+                ctx.lineCap = "round"
+
+                ctx.beginPath()
+                ctx.moveTo(ax, ay)
+                ctx.lineTo(bx, by)
+                ctx.stroke()
+
+                // A head at each end: one direction would claim the other
+                // window stays where it is.
+                var head = 9
+                function arrowHead(x, y, dirX, dirY) {
+                  var px = -dirY, py = dirX
+                  ctx.beginPath()
+                  ctx.moveTo(x, y)
+                  ctx.lineTo(x - dirX * head + px * head * 0.5,
+                             y - dirY * head + py * head * 0.5)
+                  ctx.lineTo(x - dirX * head - px * head * 0.5,
+                             y - dirY * head - py * head * 0.5)
+                  ctx.closePath()
+                  ctx.fill()
+                }
+                arrowHead(bx, by, ux, uy)
+                arrowHead(ax, ay, -ux, -uy)
               }
             }
 
