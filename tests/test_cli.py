@@ -426,9 +426,10 @@ class TestLaunchMovesWhatIsOpen:
         monkeypatch.setattr(cli.capture, "process_name", lambda pid: "")
         monkeypatch.setattr(
             cli.desktop,
-            "entry_for",
-            lambda cls, proc="": {"spotify": "spotify.desktop", "foot": "foot.desktop"}.get(
-                cls.lower(), ""
+            "entry_match",
+            lambda cls, proc="": (
+                {"spotify": "spotify.desktop", "foot": "foot.desktop"}.get(cls.lower(), ""),
+                True,
             ),
         )
 
@@ -450,10 +451,10 @@ class TestLaunchMovesWhatIsOpen:
         assert focused == ["0xBBB"]
         assert started == []
 
-    def test_starts_another_when_one_is_already_on_that_page(self, monkeypatch):
-        """ "Add it here" is already satisfied, so a second window is the ask."""
-        moved, _, started = self._run(
-            monkeypatch, ["launch", "spotify.desktop", "--page", "5", "--monitor", "A"]
+    def test_a_multi_window_app_already_there_still_gets_another(self, monkeypatch):
+        """A terminal on this page is no reason not to open a second one."""
+        moved, _, started = self._launch_and_watch(
+            monkeypatch, [], ["launch", "foot.desktop", "--page", "2", "--monitor", "A"]
         )
         assert moved == []
         assert len(started) == 1
@@ -465,19 +466,66 @@ class TestLaunchMovesWhatIsOpen:
         assert moved == []
         assert len(started) == 1
 
+    def _launch_and_watch(self, monkeypatch, opens, argv):
+        """Run a launch with `opens` appearing part-way through the wait.
+
+        The clock is faked so the poll cannot outlive the test, and advances on
+        every sleep so the loop always terminates.
+        """
+        clients = [dict(c) for c in self.CLIENTS]
+        now = {"t": 0.0}
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: clients)
+        monkeypatch.setattr(cli.time, "monotonic", lambda: now["t"])
+
+        def tick(_seconds):
+            now["t"] += 0.25
+            if opens and now["t"] >= 0.5:
+                clients.extend(opens)
+                opens.clear()
+
+        monkeypatch.setattr(cli.time, "sleep", tick)
+        return self._run(monkeypatch, argv)
+
     def test_a_new_window_is_moved_to_the_page_that_was_asked_for(self, monkeypatch):
         """A placement rule for the same application beats the focused
         workspace, so a new window opens on whichever page the rule names."""
-        opened = {"address": "0xNEW", "workspace": {"name": "12"}}
-        clients = [dict(c) for c in self.CLIENTS]
-        monkeypatch.setattr(cli.hypr, "query", lambda *a: clients)
-        monkeypatch.setattr(cli.time, "sleep", lambda _s: clients.append(opened))
-        monkeypatch.setattr(cli.time, "monotonic", lambda: 0.0)
-        moved, _, started = self._run(
-            monkeypatch, ["launch", "vlc.desktop", "--page", "6", "--monitor", "A"]
+        opened = {"address": "0xNEW", "initialClass": "foot", "workspace": {"name": "12"}, "pid": 9}
+        moved, _, started = self._launch_and_watch(
+            monkeypatch,
+            [opened],
+            ["launch", "foot.desktop", "--page", "6", "--monitor", "A"],
         )
         assert len(started) == 1
         assert moved == [("0xNEW", 6)]
+
+    def test_a_window_of_some_other_app_is_left_alone(self, monkeypatch):
+        """A splash or a notification popping up during the wait is not the
+        window that was asked for, and moving it strands the real one."""
+        intruder = {
+            "address": "0xOTHER",
+            "initialClass": "Spotify",
+            "workspace": {"name": "12"},
+            "pid": 9,
+        }
+        moved, _, started = self._launch_and_watch(
+            monkeypatch,
+            [intruder],
+            ["launch", "foot.desktop", "--page", "6", "--monitor", "A"],
+        )
+        assert len(started) == 1
+        assert moved == []
+
+    def test_an_app_already_on_the_page_is_focused_not_launched(self, monkeypatch):
+        """Nothing to add: asking a single-instance application to start again
+        only raises the window you were already looking at, after a wait for a
+        window that never comes."""
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: self.CLIENTS)
+        moved, focused, started = self._run(
+            monkeypatch, ["launch", "spotify.desktop", "--page", "5", "--monitor", "A"]
+        )
+        assert started == []
+        assert moved == []
+        assert focused == ["0xAAA"]
 
     def test_new_always_starts_another(self, monkeypatch):
         moved, _, started = self._run(

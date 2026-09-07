@@ -308,16 +308,14 @@ def cmd_apps(_args) -> int:
 
 
 def cmd_launch(args) -> int:
-    """Put an application on a page: move the one that is open, or start one.
+    """Put an application on a page: open one, or move the one that is open.
 
-    Starting is the wrong answer for an application that is already running.
-    Most of them are single-instance, so a second launch is answered by raising
-    the window they already have - on the workspace it was already on. From the
-    editor that looks like nothing happening at all, which is why "add Spotify
-    here" moves the Spotify that exists instead.
-
-    An instance already on the target page means "here" is satisfied, so a
-    second window is what was actually being asked for. --new forces that.
+    An application that can have several windows gets a new one -- "add Chrome
+    here" means another window. One that cannot gets the window it already has,
+    moved to where you asked. And if that window is already on this page there
+    is nothing to add, so it is simply focused rather than asking a
+    single-instance application to start, which it answers by raising the window
+    you were already looking at while we wait for a window that never comes.
     """
     cfg = PagesConfig.load()
     if not cfg.monitors:
@@ -328,19 +326,22 @@ def cmd_launch(args) -> int:
         print(f"no workspace for page {args.page} on {args.monitor}", file=sys.stderr)
         return 1
 
-    # An application that ships a "new window" action is telling you it can
-    # have several at once, so "add Chrome here" means another window - not the
-    # one you are already using somewhere else. One that ships none cannot, and
-    # for those "add it here" can only mean the window that exists.
     another = desktop.new_window_command(args.desktop_id)
 
     if not args.new and not desktop.is_multi_window(args.desktop_id):
-        existing = _open_elsewhere(args.desktop_id, workspace)
-        if existing:
-            hypr.move_to_workspace(existing["address"], workspace)
+        mine = _windows_of(args.desktop_id)
+        here = [c for c in mine if c.get("workspace", {}).get("name") == str(workspace)]
+        if here:
             hypr.focus_workspace(args.monitor, workspace)
-            hypr.focus_window(existing["address"])
-            cls = existing.get("initialClass") or existing.get("class") or ""
+            hypr.focus_window(here[0]["address"])
+            print(f"already on workspace {workspace}")
+            return 0
+        if mine:
+            best = mine[0]
+            hypr.move_to_workspace(best["address"], workspace)
+            hypr.focus_workspace(args.monitor, workspace)
+            hypr.focus_window(best["address"])
+            cls = best.get("initialClass") or best.get("class") or ""
             print(f"moved {cls} to workspace {workspace}")
             return 0
 
@@ -350,7 +351,9 @@ def cmd_launch(args) -> int:
     entry = args.desktop_id.removesuffix(".desktop")
 
     launcher: list[str] | None
-    if another and not args.new:
+    if another:
+        # Also for --new: that flag asks for another window, and this is the
+        # only way to get one out of a running single-instance browser.
         launcher = ["uwsm-app", "--", *another] if shutil.which("uwsm-app") else another
     else:
         launcher = _launch_command(entry)
@@ -366,20 +369,49 @@ def cmd_launch(args) -> int:
         stderr=subprocess.DEVNULL,
     )
 
-    landed = _settle_on(workspace, before)
+    landed = _settle_on(args.desktop_id, workspace, before)
     where = f"workspace {workspace}" if landed else f"workspace {workspace} (window not seen yet)"
     print(f"launched {entry} on {where}")
     return 0
 
 
-def _settle_on(workspace: int, before: set[str | None], timeout: float = 6.0) -> bool:
-    """Wait for the window that just opened and put it where it was asked for.
+def _windows_of(desktop_id: str) -> list[dict]:
+    """Every open window belonging to an application, best candidate first.
+
+    Resolved exactly as the editor resolves it for the same window, so the two
+    can never disagree about what is already open.
+
+    A window whose class names the application outright beats one reached
+    through a fallback -- `steam_app_1234` resolves to Steam, which is the
+    right icon and the wrong window to drag across pages. Then the most
+    recently focused: with three windows scattered around, the one being
+    thought of is the one last used. focusHistoryID counts up from 0 at the
+    focused window.
+    """
+    if not desktop_id:
+        return []
+    ranked: list[tuple[bool, int, dict]] = []
+    for client in hypr.query("clients") or []:
+        cls = client.get("initialClass") or client.get("class") or ""
+        entry, exact = desktop.entry_match(cls, capture.process_name(client.get("pid", 0)))
+        if entry == desktop_id:
+            ranked.append((not exact, client.get("focusHistoryID", 1 << 30), client))
+    return [client for _fallback, _recency, client in sorted(ranked, key=lambda r: r[:2])]
+
+
+def _settle_on(
+    desktop_id: str, workspace: int, before: set[str | None], timeout: float = 4.0
+) -> bool:
+    """Wait for this application's new window and put it where it was asked for.
 
     Focusing the target workspace is not enough on its own: a placement rule
     for the same application wins over the focused workspace, so "add Chrome to
-    page 6" opened a new window on whichever page Chrome's own rule names. The
-    rule is right about where Chrome opens by default and wrong about what was
-    just asked for, so the window is moved once it exists.
+    page 6" opened a new window on whichever page Chrome's own rule names.
+
+    Only a window of the application that was launched counts. Taking the first
+    window to appear moved whatever happened to open during the wait - a Steam
+    splash, a notification popup - and left the real window where its rule put
+    it.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -388,40 +420,14 @@ def _settle_on(workspace: int, before: set[str | None], timeout: float = 6.0) ->
             address = client.get("address")
             if address in before or not address:
                 continue
+            cls = client.get("initialClass") or client.get("class") or ""
+            entry, _exact = desktop.entry_match(cls, capture.process_name(client.get("pid", 0)))
+            if entry != desktop_id:
+                continue  # something else opened while we waited
             if client.get("workspace", {}).get("name") != str(workspace):
                 hypr.move_to_workspace(address, workspace)
             return True
     return False
-
-
-def _open_elsewhere(desktop_id: str, workspace: int) -> dict | None:
-    """A window of this application that is not already on `workspace`.
-
-    None when the application has nothing open, or when it already has a window
-    where it was asked to go - in both cases what is wanted is a new one.
-
-    Of several candidates a window whose class names the application outright
-    beats one resolved through a fallback, and then the most recently focused
-    wins: with three browser windows scattered around, the one being thought of
-    is the one last used.
-    """
-    if not desktop_id:
-        return None
-
-    away: list[tuple[bool, int, dict]] = []
-    for client in hypr.query("clients") or []:
-        cls = client.get("initialClass") or client.get("class") or ""
-        # Resolved exactly as the editor resolves it for the same window, so
-        # the two can never disagree about what is already open.
-        entry, exact = desktop.entry_match(cls, capture.process_name(client.get("pid", 0)))
-        if entry != desktop_id:
-            continue
-        if client.get("workspace", {}).get("name") == str(workspace):
-            return None
-        # focusHistoryID counts up from 0 at the focused window.
-        away.append((not exact, client.get("focusHistoryID", 1 << 30), client))
-
-    return min(away, key=lambda item: item[:2])[2] if away else None
 
 
 def _launch_command(entry: str) -> list[str] | None:

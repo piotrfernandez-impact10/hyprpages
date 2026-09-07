@@ -15,6 +15,7 @@ ENTRIES = {
     "google-chrome.desktop": (
         "[Desktop Entry]\nName=Google Chrome\nIcon=google-chrome\n"
         "StartupWMClass=Google-chrome\nExec=/usr/bin/google-chrome-stable %U\n"
+        "Categories=Network;WebBrowser;\n"
         "Actions=new-window;\n"
         "\n[Desktop Action new-window]\nName=New Window\nIcon=chrome-action-icon\n"
         "Exec=/usr/bin/google-chrome-stable\n"
@@ -28,6 +29,11 @@ ENTRIES = {
         "[Desktop Entry]\nName=Private Only\nIcon=p\nExec=/usr/bin/p\n"
         "Actions=new-private-window;\n"
         "\n[Desktop Action new-private-window]\nName=New Incognito\nExec=/usr/bin/p --incognito\n"
+    ),
+    "bareaction.desktop": (
+        "[Desktop Entry]\nName=Bare\nIcon=b\nExec=/usr/bin/bare\n"
+        "Categories=Utility;\nActions=new-window;\n"
+        "\n[Desktop Action new-window]\nName=New Window\nExec=/usr/bin/bare\n"
     ),
     "term.desktop": (
         "[Desktop Entry]\nName=Term\nIcon=t\nExec=/usr/bin/term\n"
@@ -132,6 +138,20 @@ class TestNewWindow:
             "/usr/bin/google-chrome-stable",
             "--new-window",
         ]
+
+    def test_an_explicit_action_exec_is_used_as_written(self):
+        assert desktop.new_window_command("withcodes.desktop") == [
+            "/usr/bin/thing",
+            "--new-window",
+        ]
+
+    def test_a_bare_action_on_a_non_browser_gets_no_invented_flag(self):
+        """--new-window is a browser convention. Handing an unknown program a
+        flag it may reject fails silently, output being discarded -- and the
+        move that would have rescued it was skipped, the entry having claimed
+        it can open windows."""
+        assert desktop.new_window_command("bareaction.desktop") == ["/usr/bin/bare"]
+        assert desktop.is_multi_window("bareaction.desktop") is True
 
     def test_a_private_window_action_is_not_a_new_window(self):
         assert desktop.new_window_command("onlyprivate.desktop") == []

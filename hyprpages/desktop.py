@@ -261,9 +261,14 @@ def new_window_command(desktop_id: str) -> list[str]:
         # Chrome's new-window action is the bare binary, identical to its main
         # Exec - and running that again only raises the window it already has,
         # which is the "it flashed and nothing happened" case. When the action
-        # adds nothing, ask for the window explicitly. Browsers, which is who
-        # ships this shape, all take --new-window.
-        if parts and main and parts[0] == main[0] and len(parts) == 1:
+        # adds nothing, ask for the window explicitly.
+        #
+        # Only for a browser, and only on that entry's own say-so: every one of
+        # them takes --new-window, while guessing it at anything whose action
+        # happens to be a bare binary would hand an unknown program a flag it
+        # may reject - and the launch fails silently, output being discarded.
+        browser = "WebBrowser" in fields.get("Categories", "").split(";")
+        if browser and parts and main and parts[0] == main[0] and len(parts) == 1:
             parts.append("--new-window")
         return parts
     return []

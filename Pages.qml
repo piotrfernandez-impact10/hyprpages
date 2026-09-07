@@ -477,6 +477,9 @@ Item {
 
   // The window a hint letter stands for, on the page being looked at.
   function entryForHint(letter) {
+    // "".indexOf is 0 in JavaScript, so without this an empty letter resolves
+    // to the first window on the page rather than to nothing.
+    if (!letter) return null
     var list = root.windowsOnPage(root.currentPage)
     var index = root.hintKeys.indexOf(letter)
     return (index >= 0 && index < list.length) ? list[index] : null
@@ -486,7 +489,9 @@ Item {
   function sendHeldTo(page, monitor) {
     var entry = root.entryForHint(root.heldHint)
     root.heldHint = ""
-    if (!entry || !monitor) return
+    // A page the configuration does not have would record a rule pointing at a
+    // workspace that cannot exist, and then fail to move anything.
+    if (!entry || !monitor || page < 1 || page > (root.config.pages || 10)) return
     root.place(entry.class, page, monitor, entry.floating,
                entry.size && entry.size.length === 2
                  ? entry.size[0] + " " + entry.size[1] : "")
@@ -890,6 +895,15 @@ Item {
           // A held window turns the number keys from "look at page N" into
           // "send it to page N": the same keys, reading as one sentence.
           if (root.heldHint) {
+            // Reaching for a number means passing over the modifiers, and Qt
+            // delivers those as ordinary presses - letting go on Shift would
+            // drop the window between picking it up and saying where to put it.
+            if (event.key === Qt.Key_Shift || event.key === Qt.Key_Control
+                || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta
+                || event.key === Qt.Key_AltGr || event.key === Qt.Key_CapsLock) {
+              event.accepted = true
+              return
+            }
             if (event.key === Qt.Key_Escape) {
               root.heldHint = ""
             } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
@@ -1218,17 +1232,14 @@ Item {
               return null
             }
 
-            // Hit-test the tile's centre rather than the pointer: dragging by a
-            // corner should still target the screen the tile is mostly over.
-            // The window under a point on the canvas, ignoring one address so a
-            // dragged tile never finds itself. Last first, matching draw order.
-            // The window a same-screen drop would trade places with, by
-            // address, or "" when the drop is an ordinary move.
+            // What a same-screen drop would trade places with: the other
+            // window's address, and the two slots in canvas coordinates.
             property string swapTarget: ""
-            // The two slots being traded, in canvas coordinates.
             property var swapFrom: null
             property var swapTo: null
 
+            // The window under a point on the canvas, ignoring one address so a
+            // dragged tile never finds itself. Last first, matching draw order.
             function windowAt(x, y, skipAddress) {
               var list = root.windowsOnPage(root.currentPage)
               for (var i = list.length - 1; i >= 0; i--) {
@@ -1242,6 +1253,8 @@ Item {
               return null
             }
 
+            // Hit-test the tile's centre rather than the pointer: dragging by a
+            // corner should still target the screen the tile is mostly over.
             function updateSnap(tile) {
               var cx = tile.x + tile.width / 2
               var cy = tile.y + tile.height / 2
