@@ -116,7 +116,7 @@ def clients() -> list[dict]:
     return sorted(seen.values(), key=lambda e: e["class"].lower())
 
 
-def move_to_workspace(address: str, workspace: int, follow: bool = False) -> None:
+def move_to_workspace(address: str, workspace: int | str, follow: bool = False) -> None:
     """Move one window to a workspace, without dragging focus along.
 
     Hyprland 0.56 parses dispatch arguments as Lua, so the older
@@ -141,6 +141,66 @@ def swap_windows(first: str, second: str) -> None:
         "dispatch",
         f"hl.dsp.window.swap({{ window = 'address:{first}', target = 'address:{second}' }})",
     )
+
+
+# Dwindle's letters for the four sides, as `layoutmsg preselect` takes them.
+SIDES = {"left": "l", "right": "r", "above": "u", "below": "d"}
+
+# Parked here for the instant between leaving a workspace and coming back to
+# it. A special workspace that is never shown, so nothing flashes on screen,
+# and Hyprland drops it again the moment it is empty.
+_PARKING = "special:hyprpages_parking"
+
+
+def workspace_layouts() -> dict[str, str]:
+    """Workspace name -> the tiling layout it uses ("dwindle", "scrolling"...).
+
+    Hyprland 0.56 keeps a layout per workspace (`tiledLayout`), so the global
+    setting says nothing about the workspace in front of you. Older versions
+    report no field, which comes back as "" and means "whatever the global
+    layout is".
+    """
+    return {
+        str(w.get("name", "")): str(w.get("tiledLayout") or "") for w in query("workspaces") or []
+    }
+
+
+def place_beside(address: str, target: str, side: str) -> None:
+    """Re-tile one window on a given side of another, splitting its slot.
+
+    Dwindle has no "insert here". What it has is a rule for where a window
+    goes when it arrives on a workspace: next to the focused window
+    (`use_active_for_splits`), on the side a `preselect` asked for. So the
+    target is focused, the side is preselected, and the window leaves the
+    workspace and comes straight back - which is an arrival. Focus is put back
+    where it was afterwards; the editor is what the user is looking at.
+    """
+    letter = SIDES[side]
+    workspace = ""
+    for c in query("clients") or []:
+        if c.get("address") == target:
+            workspace = c.get("workspace", {}).get("name", "")
+    if not workspace:
+        raise HyprError(f"no window with address {target}")
+    focused = (query("activewindow") or {}).get("address")
+
+    # The rule this relies on is on by default; someone who turned it off
+    # would otherwise get the window split at wherever the pointer happens to
+    # be, which is not what they dropped it on.
+    option = query("getoption", "dwindle:use_active_for_splits") or {}
+    use_active = bool(option.get("int", 1))
+    if not use_active:
+        _hyprctl("keyword", "dwindle:use_active_for_splits", "true")
+    try:
+        focus_window(target)
+        _hyprctl("dispatch", f"hl.dsp.layout('preselect {letter}')")
+        move_to_workspace(address, _PARKING)
+        move_to_workspace(address, workspace)
+    finally:
+        if not use_active:
+            _hyprctl("keyword", "dwindle:use_active_for_splits", "false")
+        if focused and focused != address:
+            focus_window(focused)
 
 
 def focus_workspace(monitor: str, workspace: int) -> None:

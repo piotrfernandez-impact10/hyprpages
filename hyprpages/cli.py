@@ -68,6 +68,7 @@ def build_state() -> dict:
     tabs = capture.browser_tabs()
 
     by_id = {m["id"]: m for m in monitors}
+    layouts = hypr.workspace_layouts()
 
     windows = []
     for client in hypr.query("clients") or []:
@@ -81,6 +82,9 @@ def build_state() -> dict:
         placement = cfg.page_of(int(workspace)) if workspace.isdigit() else None
         described["page"] = placement[0] if placement else None
         described["monitor"] = placement[1] if placement else None
+        # Which layout governs the window's workspace, so the editor knows
+        # whether "split here" is a gesture it can offer.
+        described["layout"] = layouts.get(workspace, "")
         windows.append(described)
 
     return {
@@ -236,6 +240,37 @@ def cmd_swap(args) -> int:
 
     hypr.swap_windows(args.first, args.second)
     print(f"swapped {args.first} and {args.second}")
+    return 0
+
+
+def cmd_beside(args) -> int:
+    """Put one window on a chosen side of another, splitting the other's slot.
+
+    Only dwindle can do this: the scrolling layout has no preselect and no
+    notion of "above", and asking it would error out or do nothing. The editor
+    does not offer the gesture there, and the command refuses rather than
+    guess.
+    """
+    clients = {client.get("address"): client for client in (hypr.query("clients") or [])}
+    for address in (args.window, args.target):
+        if address not in clients:
+            print(f"no window with address {address}", file=sys.stderr)
+            return 1
+    if args.window == args.target:
+        return 0
+
+    workspace = clients[args.target].get("workspace", {}).get("name", "")
+    layout = hypr.workspace_layouts().get(workspace, "")
+    if layout and layout != "dwindle":
+        print(
+            f"workspace {workspace} uses the {layout} layout, which has no splits;"
+            " drop on the middle of a window to swap instead",
+            file=sys.stderr,
+        )
+        return 1
+
+    hypr.place_beside(args.window, args.target, args.side)
+    print(f"placed {args.window} {args.side} {args.target}")
     return 0
 
 
@@ -597,6 +632,14 @@ def main(argv: list[str] | None = None) -> int:
     swap_parser.add_argument("first", help="window address, e.g. 0x55...")
     swap_parser.add_argument("second", help="window address, e.g. 0x55...")
     swap_parser.set_defaults(func=cmd_swap)
+
+    beside_parser = sub.add_parser(
+        "beside", help="put a window on one side of another, splitting its slot"
+    )
+    beside_parser.add_argument("window", help="window address to move, e.g. 0x55...")
+    beside_parser.add_argument("target", help="window address to split, e.g. 0x55...")
+    beside_parser.add_argument("side", choices=sorted(hypr.SIDES), help="which side of the target")
+    beside_parser.set_defaults(func=cmd_beside)
 
     close_parser = sub.add_parser("close", help="ask one window to close")
     close_parser.add_argument("address", help="window address, e.g. 0x55...")

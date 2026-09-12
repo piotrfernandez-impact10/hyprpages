@@ -613,6 +613,15 @@ Item {
     swapProcess.running = true
   }
 
+  // Put a window on one side of another, splitting that window's slot: the
+  // one rearrangement beyond a swap that dwindle can be asked for. Live only
+  // and recorded nowhere, for the same reason as a swap.
+  function besideLive(address, target, side) {
+    if (!root.opened || !address || !target || address === target || !side) return
+    besideProcess.command = [root.cli, "beside", address, target, side]
+    besideProcess.running = true
+  }
+
   // Move the live windows of a class, so a drag has a visible effect at once.
   // The rule it also records is what makes the placement stick next time.
   // `address` moves just that window; without it every window of the class
@@ -749,6 +758,19 @@ Item {
     id: swapProcess
     stdout: StdioCollector {
       onStreamFinished: root.refresh()   // redraw from reality, not assumption
+    }
+    stderr: StdioCollector {
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.error = message
+      }
+    }
+  }
+
+  Process {
+    id: besideProcess
+    stdout: StdioCollector {
+      onStreamFinished: root.refresh()
     }
     stderr: StdioCollector {
       onStreamFinished: {
@@ -1237,6 +1259,53 @@ Item {
             property string swapTarget: ""
             property var swapFrom: null
             property var swapTo: null
+            // Or split: the window under the drop and which of its sides the
+            // dragged one takes ("left", "right", "above", "below"). Empty
+            // when the drop is a swap.
+            property string splitTarget: ""
+            property string splitSide: ""
+
+            // Where on a window a drop lands decides what it does. The middle
+            // is a swap; the rim is a split on that side, the side chosen by
+            // the box's own diagonals the way dwindle's smart_split does it,
+            // so a wide window splits left and right over most of its width
+            // rather than only at a thin edge. "" means swap.
+            readonly property real swapZone: 0.5
+            function dropSide(x, y, r) {
+              if (r.width <= 0 || r.height <= 0) return ""
+              var nx = (x - r.x) / r.width - 0.5
+              var ny = (y - r.y) / r.height - 0.5
+              if (Math.abs(nx) < canvas.swapZone / 2 && Math.abs(ny) < canvas.swapZone / 2) return ""
+              if (Math.abs(nx) > Math.abs(ny)) return nx < 0 ? "left" : "right"
+              return ny < 0 ? "above" : "below"
+            }
+
+            // The slot a split leaves for the dragged window: that half of
+            // the target, which is where dwindle will put it.
+            function splitRect(r, side) {
+              var g = canvas.gap / 2
+              switch (side) {
+                case "left":  return { x: r.x, y: r.y, width: r.width / 2 - g, height: r.height }
+                case "right": return { x: r.x + r.width / 2 + g, y: r.y, width: r.width / 2 - g, height: r.height }
+                case "above": return { x: r.x, y: r.y, width: r.width, height: r.height / 2 - g }
+                default:      return { x: r.x, y: r.y + r.height / 2 + g, width: r.width, height: r.height / 2 - g }
+              }
+            }
+
+            // Splits are dwindle's; the scrolling layout has no "above". A
+            // window that does not say (older Hyprland) is assumed to be on
+            // the global layout, which is dwindle unless someone changed it.
+            function canSplit(w) {
+              return !w.layout || w.layout === "dwindle"
+            }
+
+            function clearTargets() {
+              canvas.swapTarget = ""
+              canvas.swapFrom = null
+              canvas.swapTo = null
+              canvas.splitTarget = ""
+              canvas.splitSide = ""
+            }
 
             // The window under a point on the canvas, ignoring one address so a
             // dragged tile never finds itself. Last first, matching draw order.
@@ -1261,19 +1330,31 @@ Item {
               var screen = canvas.screenAt(cx, cy)
               if (!screen) {
                 canvas.snap = null
-                canvas.swapTarget = ""
-                canvas.swapFrom = null
-                canvas.swapTo = null
+                canvas.clearTargets()
                 return
               }
 
               // Over another window on the window's own screen, the drop is a
-              // swap. Preview it where it will actually end up - the other
-              // window's slot - rather than as a free-floating box, which is a
-              // shape a tiling layout would never give it.
+              // swap or a split. Preview it where it will actually end up -
+              // the other window's slot, or half of it - rather than as a
+              // free-floating box, which is a shape a tiling layout would
+              // never give it.
               var onto = (screen.name === tile.modelData.onMonitor)
                 ? canvas.windowAt(cx, cy, tile.modelData.address) : null
               if (onto) {
+                var slot = canvas.windowRect(onto, screen)
+                var side = canvas.canSplit(onto) ? canvas.dropSide(cx, cy, slot) : ""
+                if (side) {
+                  canvas.swapTarget = ""
+                  canvas.swapFrom = null
+                  canvas.swapTo = null
+                  canvas.splitTarget = onto.address
+                  canvas.splitSide = side
+                  canvas.snap = Object.assign({ monitor: screen.name }, canvas.splitRect(slot, side))
+                  return
+                }
+                canvas.splitTarget = ""
+                canvas.splitSide = ""
                 // Both slots, so the arrow can say what actually happens: this
                 // window goes there, and that one comes back here. Rebuilt only
                 // when the target changes, not on every frame of the drag - the
@@ -1282,14 +1363,12 @@ Item {
                   canvas.swapTarget = onto.address
                   canvas.swapFrom = { x: tile.homeX, y: tile.homeY,
                                       width: tile.width, height: tile.height }
-                  canvas.swapTo = canvas.windowRect(onto, screen)
+                  canvas.swapTo = slot
                 }
                 canvas.snap = Object.assign({ monitor: screen.name }, canvas.swapTo)
                 return
               }
-              canvas.swapTarget = ""
-              canvas.swapFrom = null
-              canvas.swapTo = null
+              canvas.clearTargets()
 
               var r = canvas.screenRect(screen)
               var pad = canvas.inset
@@ -1444,19 +1523,19 @@ Item {
                                  ? tile.modelData.size[0] + " " + tile.modelData.size[1] : "")
                     root.moveLive(tile.modelData.class, root.currentPage,
                                   canvas.snap.monitor, tile.modelData.address)
-                  } else if (canvas.snap) {
-                    // Same screen: the layout owns the positions, so there is no
-                    // "put it here" - dropping on another window trades places
-                    // with it, which is the only rearrangement a tiler offers.
-                    var onto = canvas.windowAt(tile.x + tile.width / 2,
-                                               tile.y + tile.height / 2,
-                                               tile.modelData.address)
-                    if (onto) root.swapLive(tile.modelData.address, onto.address)
+                  } else if (canvas.snap && canvas.splitTarget) {
+                    // Same screen, on the rim of another window: the dragged
+                    // one takes that side of it, and the layout splits the
+                    // slot between them.
+                    root.besideLive(tile.modelData.address, canvas.splitTarget, canvas.splitSide)
+                  } else if (canvas.snap && canvas.swapTarget) {
+                    // Same screen, on the middle of another window: the two
+                    // trade places. The layout owns positions, so these two
+                    // gestures are all the rearrangement it offers.
+                    root.swapLive(tile.modelData.address, canvas.swapTarget)
                   }
                   canvas.snap = null
-                  canvas.swapTarget = ""
-                  canvas.swapFrom = null
-                  canvas.swapTo = null
+                  canvas.clearTargets()
                 }
                 foreground: root.foreground
                 surface: root.windowFill
@@ -1607,11 +1686,14 @@ Item {
             // preview, so the tile riding over the middle cannot bury it.
             Text {
               z: 26
-              visible: canvas.swapTarget !== "" && canvas.snap !== null
+              visible: (canvas.swapTarget !== "" || canvas.splitTarget !== "") && canvas.snap !== null
               x: canvas.snap ? canvas.snap.x + (canvas.snap.width - width) / 2 : 0
               y: canvas.snap ? canvas.snap.y + canvas.snap.height - height
                                - Style.spacing.xs : 0
-              text: "⇄  swap"
+              text: canvas.splitTarget
+                ? ({ left: "←  left of it", right: "→  right of it",
+                     above: "↑  above it", below: "↓  below it" })[canvas.splitSide]
+                : "⇄  swap"
               color: root.selectedText
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.bodySmall
@@ -1627,7 +1709,7 @@ Item {
             text: root.heldHint
               ? "holding " + root.heldHint.toUpperCase()
                 + "   ·   1-0 send it to that page   ·   ← → other screen   ·   Esc let go"
-              : "letter picks a window   ·   drag to swap or change screen   ·   right-click for options   "
+              : "letter picks a window   ·   drag onto a window to split or swap, onto a screen to move   ·   right-click for options   "
                 + "·   1-0 page   ·   L link screens   ·   V live view   ·   R refresh   "
                 + "·   Enter apply   ·   Esc close"
             color: root.mutedText

@@ -19,6 +19,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   arrow between the two and the partner outlined; it moves live windows and
   records no rule, because no rule can express it.
 - `hyprpages swap <address> <address>` behind it.
+- **Drag to split**: dropping a tile on the rim of another window on the same
+  screen puts it on that side — left, right, above or below — and the layout
+  splits the slot between the two, the way dwindle's own `smart_split` reads a
+  drop. The middle of a window still swaps. Previewed as the half it will take,
+  labelled with the side. Dwindle only: the scrolling layout has no "above",
+  so there the whole window swaps as before.
+- `hyprpages beside <window> <target> <left|right|above|below>` behind it,
+  which works by focusing the target, preselecting the side and re-tiling the
+  window — dwindle has no "insert here", but it does decide where an arriving
+  window goes.
+- Every window in `hyprpages state` now carries the `layout` of its workspace,
+  as Hyprland 0.56 keeps one per workspace.
 - Per-app **"keep it on every page"**: the app follows you instead of living on
   one page — a video call, a player, a monitoring window. Hyprland only pins
   floating windows, so the generated rule floats it too rather than emitting a

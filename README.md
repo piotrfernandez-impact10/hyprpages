@@ -66,7 +66,9 @@ Hyprland the CLI still does everything except the dragging.
   you want in front of you whichever page you are on
 - **Works without a mouse** — every window carries a letter; press it, then a
   page number, and it goes there
-- **Swaps two windows** — drop one on another to trade their places
+- **Rearranges a screen by dragging** — drop a window on the middle of
+  another to trade places, or on its edge to split that side of it, left,
+  right, above or below
 
 ## Requirements
 

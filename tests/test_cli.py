@@ -597,3 +597,52 @@ class TestSwap:
     def test_swapping_a_window_with_itself_does_nothing(self, monkeypatch):
         code, swapped = self._run(monkeypatch, ["swap", "0xAAA", "0xAAA"])
         assert (code, swapped) == (0, [])
+
+
+class TestBeside:
+    CLIENTS: ClassVar[list[dict]] = [
+        {"address": "0xAAA", "workspace": {"name": "2"}},
+        {"address": "0xBBB", "workspace": {"name": "2"}},
+        {"address": "0xCCC", "workspace": {"name": "12"}},
+    ]
+    LAYOUTS: ClassVar[dict[str, str]] = {"2": "dwindle", "12": "scrolling"}
+
+    def _run(self, monkeypatch, argv, layouts=None):
+        monkeypatch.setattr(cli.hypr, "query", lambda *a: self.CLIENTS)
+        monkeypatch.setattr(
+            cli.hypr, "workspace_layouts", lambda: self.LAYOUTS if layouts is None else layouts
+        )
+        placed = []
+        monkeypatch.setattr(
+            cli.hypr, "place_beside", lambda a, t, side: placed.append((a, t, side))
+        )
+        return cli.main(argv), placed
+
+    def test_places_a_window_on_a_side_of_another(self, monkeypatch):
+        code, placed = self._run(monkeypatch, ["beside", "0xAAA", "0xBBB", "below"])
+        assert (code, placed) == (0, [("0xAAA", "0xBBB", "below")])
+
+    def test_refuses_an_address_no_window_has(self, monkeypatch, capsys):
+        code, placed = self._run(monkeypatch, ["beside", "0xAAA", "0xZZZ", "left"])
+        assert (code, placed) == (1, [])
+        assert "no window with address" in capsys.readouterr().err
+
+    def test_a_window_beside_itself_does_nothing(self, monkeypatch):
+        code, placed = self._run(monkeypatch, ["beside", "0xAAA", "0xAAA", "left"])
+        assert (code, placed) == (0, [])
+
+    def test_refuses_on_a_layout_without_splits(self, monkeypatch, capsys):
+        """Preselect is dwindle's; asking the scrolling layout would error out
+        or do nothing, and the message has to say why the drop was refused."""
+        code, placed = self._run(monkeypatch, ["beside", "0xAAA", "0xCCC", "right"])
+        assert (code, placed) == (1, [])
+        assert "scrolling" in capsys.readouterr().err
+
+    def test_an_unreported_layout_is_taken_as_dwindle(self, monkeypatch):
+        """Older Hyprland has no per-workspace layout field."""
+        code, placed = self._run(monkeypatch, ["beside", "0xAAA", "0xCCC", "above"], layouts={})
+        assert (code, placed) == (0, [("0xAAA", "0xCCC", "above")])
+
+    def test_only_the_four_sides_are_accepted(self, monkeypatch):
+        with pytest.raises(SystemExit):
+            self._run(monkeypatch, ["beside", "0xAAA", "0xBBB", "sideways"])
