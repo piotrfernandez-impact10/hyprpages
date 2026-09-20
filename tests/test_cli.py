@@ -424,6 +424,11 @@ class TestLaunchMovesWhatIsOpen:
         monkeypatch.setattr(cli.hypr, "query", lambda *a: self.CLIENTS)
         monkeypatch.setattr(cli.hypr, "monitors", lambda: MONITORS)
         monkeypatch.setattr(cli.capture, "process_name", lambda pid: "")
+        # The host's own desktop entries must not decide these: a runner
+        # without foot installed would see a single-window app and move the
+        # terminal instead of opening another.
+        monkeypatch.setattr(cli.desktop, "is_multi_window", lambda d: d == "foot.desktop")
+        monkeypatch.setattr(cli.desktop, "new_window_command", lambda d: [])
         monkeypatch.setattr(
             cli.desktop,
             "entry_match",
